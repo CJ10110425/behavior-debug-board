@@ -128,6 +128,10 @@ type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
 const renderProtocol = "1";
+const debugNodeWidth = 226;
+const minimumNodeGap = 84;
+const edgeLabelChromeWidth = 26;
+const edgeLabelSafetyGap = 24;
 
 const categoryIconPath: Record<BoardCategoryIcon, string> = {
   "web-app": "/icons/app-window.svg",
@@ -533,10 +537,40 @@ function playbackData(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: F
   };
 }
 
+function estimatedEdgeLabelWidth(label: string) {
+  const textWidth = Array.from(label).reduce((width, character) => (
+    width + ((character.codePointAt(0) ?? 0) <= 0xff ? 4.4 : 7)
+  ), 0);
+  return textWidth + edgeLabelChromeWidth;
+}
+
+function nodePositionsForFlow(flow: BoardFlowConfig) {
+  const positions = [64];
+
+  for (let index = 0; index < flow.nodes.length - 1; index += 1) {
+    const currentId = flow.nodes[index].id;
+    const nextId = flow.nodes[index + 1].id;
+    const labelsBetweenNodes = flow.edges
+      .filter((edge) => (
+        (edge.source === currentId && edge.target === nextId)
+        || (edge.source === nextId && edge.target === currentId)
+      ))
+      .map((edge) => estimatedEdgeLabelWidth(edge.label));
+    const requiredLabelGap = labelsBetweenNodes.length > 0
+      ? Math.ceil(Math.max(...labelsBetweenNodes) + edgeLabelSafetyGap)
+      : minimumNodeGap;
+    const gap = Math.max(minimumNodeGap, requiredLabelGap);
+    positions.push(positions[index] + debugNodeWidth + gap);
+  }
+
+  return positions;
+}
+
 function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions): CanvasNode[] {
   const flow = flowConfigByMode[mode];
   const groupId = `${mode}-group`;
-  const groupWidth = Math.max(1000, 128 + flow.nodes.length * 310);
+  const nodePositions = nodePositionsForFlow(flow);
+  const groupWidth = Math.max(1000, nodePositions.at(-1)! + debugNodeWidth + 64);
 
   return [
     {
@@ -560,7 +594,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     ...flow.nodes.map((node, index) => ({
       id: `${mode}-${node.id}`,
       type: "debugNode" as const,
-      position: { x: 64 + index * 310, y: 78 },
+      position: { x: nodePositions[index], y: 78 },
       parentId: groupId,
       data: debugData(flowConfigByMode, mode, node.id, runtime),
       draggable: true,
@@ -568,7 +602,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     {
       id: `${mode}-playback`,
       type: "playbackNode",
-      position: { x: 135, y: 252 },
+      position: { x: (groupWidth - 720) / 2, y: 252 },
       parentId: groupId,
       data: playbackData(flowConfigByMode, mode, runtime, actions),
       draggable: true,

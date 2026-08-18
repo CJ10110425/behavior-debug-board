@@ -205,6 +205,30 @@ export async function runBoardQa(options) {
     ensure(labelTexts.every((label) => label.trim().length > 0), "one or more directional edges rendered without a label");
     checks["persistent-edge-labels"] = true;
 
+    const labelNodeOverlaps = await page.evaluate(() => {
+      const labels = Array.from(document.querySelectorAll('[data-testid="edge-label"]'));
+      const serviceNodes = Array.from(document.querySelectorAll('[data-testid="service-node"]'));
+      return labels.flatMap((label) => {
+        const labelBounds = label.getBoundingClientRect();
+        return serviceNodes.flatMap((node) => {
+          const nodeBounds = node.getBoundingClientRect();
+          const overlapWidth = Math.max(0, Math.min(labelBounds.right, nodeBounds.right) - Math.max(labelBounds.left, nodeBounds.left));
+          const overlapHeight = Math.max(0, Math.min(labelBounds.bottom, nodeBounds.bottom) - Math.max(labelBounds.top, nodeBounds.top));
+          if (overlapWidth <= 0.5 || overlapHeight <= 0.5) return [];
+          return [{
+            edge: label.getAttribute("data-edge-id"),
+            node: node.getAttribute("data-node-id"),
+            flow: node.getAttribute("data-flow"),
+            overlapWidth: Math.round(overlapWidth),
+            overlapHeight: Math.round(overlapHeight),
+          }];
+        });
+      });
+    });
+    actual.labelNodeOverlaps = labelNodeOverlaps.length;
+    ensure(labelNodeOverlaps.length === 0, `edge labels overlap service cards: ${JSON.stringify(labelNodeOverlaps)}`);
+    checks["edge-label-clearance"] = true;
+
     if (options.finalStep) {
       const playback = page.locator(`[data-testid="playback-card"][data-flow="${options.flow}"]`);
       const currentStep = Number(await playback.getAttribute("data-current-step"));

@@ -3,6 +3,7 @@
 - Canvas and graph state: `@xyflow/react` (React Flow / XYFlow).
 - UI runtime: React 19 with Vinext and Vite.
 - Edge geometry: React Flow `getStraightPath`; forward and return traffic use separate handles and separate edge records.
+- Edge-label layout: adjacent service-card gaps expand from the longest label estimate plus a safety margin; browser QA rejects any remaining label/card bounding-box intersection.
 - Packet motion: native SVG `<animateMotion>` on a grouped halo and dot.
 - Loading state: CSS spinner inside the active service card.
 - Infinite board: React Flow pan/zoom, dotted `Background`, fit-view, draggable nodes, and movable parent groups.
