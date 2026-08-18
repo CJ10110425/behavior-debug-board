@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "title": "首頁雙來源 Fan-out：單一路徑失敗不再拖垮整個 Feed",
+  "flows": [
+    {
+      "id": "before",
+      "label": "Before｜兩條請求綁成全有或全無",
+      "outcome": "error",
+      "position": { "x": 150, "y": 55 },
+      "nodes": [
+        {
+          "id": "trending",
+          "title": "近期熱門 API",
+          "subtitle": "Cloud Run · 近 7 天",
+          "detail": "短暫 timeout／5xx",
+          "kind": "service",
+          "logo": "/logos/cloud-run.svg"
+        },
+        {
+          "id": "home",
+          "title": "iOS 首頁",
+          "subtitle": "熱門內容 Feed",
+          "detail": "兩條 await 共用同一個成功條件",
+          "kind": "client",
+          "categoryIcon": "mobile-app"
+        },
+        {
+          "id": "firestore",
+          "title": "長期熱門查詢",
+          "subtitle": "Cloud Firestore · all-time",
+          "detail": "這一路其實仍可正常回傳",
+          "kind": "database",
+          "logo": "/logos/firestore.svg"
+        }
+      ],
+      "edges": [
+        {
+          "id": "home-trending",
+          "source": "home",
+          "target": "trending",
+          "direction": "forward",
+          "label": "GET /simulators/trending",
+          "semantic": "request",
+          "activeSteps": [1, 2]
+        },
+        {
+          "id": "home-firestore",
+          "source": "home",
+          "target": "firestore",
+          "direction": "forward",
+          "label": "query hot simulators",
+          "semantic": "query",
+          "activeSteps": [1, 3]
+        }
+      ],
+      "steps": [
+        {
+          "title": "重現雙來源載入",
+          "reason": "使用者打開首頁熱門內容",
+          "note": "一張前端 card 準備同時打兩個後端來源。",
+          "nodeStatuses": { "home": "idle", "trending": "idle", "firestore": "idle" }
+        },
+        {
+          "title": "請求從同一點分岔",
+          "reason": "近期與長期熱門內容要並行取得",
+          "note": "首頁同時送出 Cloud Run API 與 Firestore query。",
+          "nodeStatuses": { "home": "running", "trending": "running", "firestore": "running" }
+        },
+        {
+          "title": "其中一路失敗",
+          "reason": "近期熱門 API 暫時 timeout",
+          "note": "Firestore 分支仍在正常執行。",
+          "nodeStatuses": { "home": "running", "trending": "error", "firestore": "running" }
+        },
+        {
+          "title": "健康分支有資料",
+          "reason": "Firestore 成功回傳長期熱門內容",
+          "note": "但綁在一起的 await 已因另一條錯誤而失敗。",
+          "nodeStatuses": { "home": "error", "trending": "error", "firestore": "success" }
+        },
+        {
+          "title": "整個 Feed 被拖垮",
+          "reason": "任一路失敗就視為整組失敗",
+          "note": "使用者看不到本來可用的 Firestore 熱門內容。",
+          "nodeStatuses": { "home": "error", "trending": "error", "firestore": "success" }
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "label": "After｜每條分支獨立容錯後再合併",
+      "outcome": "success",
+      "position": { "x": 150, "y": 650 },
+      "nodes": [
+        {
+          "id": "trending",
+          "title": "近期熱門 API",
+          "subtitle": "Cloud Run · 近 7 天",
+          "detail": "失敗時降級成空陣列",
+          "kind": "service",
+          "logo": "/logos/cloud-run.svg"
+        },
+        {
+          "id": "home",
+          "title": "iOS 首頁",
+          "subtitle": "熱門內容 Feed",
+          "detail": "分別 catch，再混合所有可用結果",
+          "kind": "client",
+          "categoryIcon": "mobile-app",
+          "changed": true
+        },
+        {
+          "id": "firestore",
+          "title": "長期熱門查詢",
+          "subtitle": "Cloud Firestore · all-time",
+          "detail": "保持獨立並正常回傳",
+          "kind": "database",
+          "logo": "/logos/firestore.svg"
+        }
+      ],
+      "edges": [
+        {
+          "id": "home-trending",
+          "source": "home",
+          "target": "trending",
+          "direction": "forward",
+          "label": "並行 GET trending",
+          "semantic": "request",
+          "activeSteps": [1, 2]
+        },
+        {
+          "id": "home-firestore",
+          "source": "home",
+          "target": "firestore",
+          "direction": "forward",
+          "label": "並行 query hot",
+          "semantic": "query",
+          "activeSteps": [1, 3]
+        }
+      ],
+      "steps": [
+        {
+          "title": "載入容錯修正",
+          "reason": "兩個資料來源不再共用同一個失敗域",
+          "note": "只有兩路都失敗時，整個首頁才顯示錯誤。",
+          "nodeStatuses": { "home": "idle", "trending": "idle", "firestore": "idle" }
+        },
+        {
+          "title": "請求從同一點分岔",
+          "reason": "維持並行載入速度",
+          "note": "同一張前端 card 仍同時打兩張後端 card。",
+          "nodeStatuses": { "home": "running", "trending": "running", "firestore": "running" }
+        },
+        {
+          "title": "局部降級",
+          "reason": "近期熱門 API 暫時 timeout",
+          "note": "這條分支被轉成空陣列，不取消 Firestore 分支。",
+          "nodeStatuses": { "home": "running", "trending": "error", "firestore": "running" }
+        },
+        {
+          "title": "保留健康結果",
+          "reason": "Firestore 成功回傳長期熱門內容",
+          "note": "首頁繼續使用這一路的資料。",
+          "nodeStatuses": { "home": "running", "trending": "error", "firestore": "success" }
+        },
+        {
+          "title": "顯示降級版 Feed",
+          "reason": "至少一個來源仍可用",
+          "note": "使用者仍看到熱門內容，系統只記錄 degraded source。",
+          "nodeStatuses": { "home": "success", "trending": "error", "firestore": "success" }
+        }
+      ]
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 - Canvas and graph state: `@xyflow/react` (React Flow / XYFlow).
 - UI runtime: React 19 with Vinext and Vite.
 - Edge geometry: React Flow `getStraightPath`; forward and return traffic use separate handles and separate edge records.
+- Topology layout: a three-card flow with one outbound source and two distinct targets automatically renders as a left-to-right fan-out with vertically split targets and low-curvature cubic Bézier paths; other flows retain the horizontal layout and straight paths.
 - Edge-label layout: adjacent service-card gaps expand from the longest label estimate plus a safety margin; browser QA rejects any remaining label/card bounding-box intersection.
 - Packet motion: native SVG `<animateMotion>` on a grouped halo and dot.
 - Loading state: CSS spinner inside the active service card.
@@ -11,6 +12,6 @@
 - Brand assets: local raw SVG files resolved through theSVG MCP/registry, preserving official colors.
 - Runtime config: validated canonical JSON written to ignored `public/runtime/<sha256>.json`, then fetched from `?config=<sha256>` and verified again in the browser.
 - Render readiness: `data-board-ready="true"` is set only after config verification, React Flow initialization, fit-view, fonts/images, and two animation frames.
-- Browser QA: Playwright fast mode verifies the exact config hash plus rendered counts and screenshot; `--full` additionally tests replay, loading, drag, zoom, and fit-view.
+- Browser QA: Playwright fast mode verifies the exact config hash, rendered counts, detected fan-out geometry, and screenshot; `--full` additionally tests replay, loading, drag, zoom, and fit-view.
 
 This skill does not render `.tldr` JSON. Its visual language is tldraw-like, but the interactive implementation is React Flow because it needs live playback, independent directional tracks, node state, and browser-local controls.

@@ -6,6 +6,7 @@
 |---|---|---|---|---|
 | `assets/logos/firebase.svg` | Firebase | `https://thesvg.org/icon/firebase` | `default` | theSVG lists CC0-1.0; Firebase trademark rules still apply |
 | `assets/logos/firestore.svg` | Cloud Firestore | `https://thesvg.org/icon/firestore` | `default` | theSVG lists Custom; use only to identify Cloud Firestore |
+| `public/logos/cloud-run.svg` | Cloud Run | `https://services.google.com/fh/files/misc/core-products-icons.zip` | `CloudRun-512-color-rgb.svg` | Official Google Cloud product icon; Google trademark rules apply |
 
 The copies rendered by the app live under `public/logos/` and match these upstream SVGs.
 

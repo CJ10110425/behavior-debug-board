@@ -37,7 +37,7 @@ Guarantee all of the following:
      --screenshot /absolute/path/to/result.jpg
    ```
 
-5. Use `--full` when changing the renderer itself. Full QA additionally exercises replay, loading, drag, zoom, and fit-view. Do not pay this cost for every generated board.
+5. Use `--full` when changing the renderer itself. Full QA additionally exercises replay, loading, drag, zoom, fit-view, and any detected single-source fan-out layout. Do not pay this cost for every generated board.
 6. Launch the local board for the user:
 
    ```bash
@@ -49,7 +49,7 @@ Guarantee all of the following:
 
 ## Diagram Rules
 
-- Use 2–5 service nodes per flow and keep peer nodes on one horizontal band.
+- Use 2–5 service nodes per flow. Keep linear peers on one horizontal band. For one source with exactly two outbound targets, place the source on the left, stack both targets on the right, and use low-curvature branch paths so the fan-out is unmistakable without looking decorative.
 - Use `direction: "forward"` for outbound traffic and `direction: "return"` for responses/errors. Parallel tracks are mandatory for opposite directions.
 - Keep labels short and behavioral: `讀取 Profile`, `查詢資料`, `回傳 Profile`, `拒絕存取`.
 - Use blue for requests/loading, orange for processing/query, green for success/response, and red for failure. Keep the canvas and cards neutral.
@@ -63,7 +63,8 @@ Guarantee all of the following:
 - [references/logo-sources.md](references/logo-sources.md): bundled logo provenance and trademark notes.
 - [references/rendering-stack.md](references/rendering-stack.md): renderer, animation, and UI-icon implementation.
 - `assets/example-board.json`: smallest complete Before/After configuration to copy and edit.
-- `assets/logos/`: offline Firebase and Firestore fallbacks.
+- `assets/fanout-board.json`: single-source/two-target regression fixture for curved branch layout.
+- `assets/logos/`: offline Firebase, Firestore, and Cloud Run fallbacks.
 - `scripts/behavior-debug-board.mjs`: validate, hash-prepare, launch, wait, and open the board.
 - `scripts/qa-board.mjs`: fast/full Playwright QA, structured report, and magic-byte-safe screenshot capture.
 

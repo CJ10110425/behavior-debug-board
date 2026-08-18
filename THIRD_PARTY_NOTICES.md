@@ -10,6 +10,15 @@ The bundled Firebase and Cloud Firestore SVGs are used only to identify those se
 
 Firebase and Cloud Firestore are trademarks of Google LLC. No endorsement or affiliation is implied.
 
+## Google Cloud Run mark
+
+The bundled Cloud Run SVG comes from Google's official core product icon archive and is used only to identify Cloud Run in a debugging diagram. Google Cloud trademark rules apply independently of this repository's MIT license.
+
+- Cloud Run source: https://services.google.com/fh/files/misc/core-products-icons.zip
+- Google Cloud trademark guidelines: https://cloud.google.com/terms/trademark-guidelines
+
+Cloud Run and Google Cloud are trademarks of Google LLC. No endorsement or affiliation is implied.
+
 ## Lucide
 
 UI symbols are provided by `lucide-static` under the ISC License: https://lucide.dev/license

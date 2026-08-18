@@ -20,8 +20,10 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
     schema: resolve(skillRoot, "references/board-schema.md"),
     logoMcp: resolve(skillRoot, "references/logo-mcp.md"),
     rendering: resolve(skillRoot, "references/rendering-stack.md"),
+    fanout: resolve(skillRoot, "assets/fanout-board.json"),
     firebase: resolve(skillRoot, "assets/logos/firebase.svg"),
     firestore: resolve(skillRoot, "assets/logos/firestore.svg"),
+    cloudRun: resolve(skillRoot, "assets/logos/cloud-run.svg"),
   };
 
   const categoryIconNames = [

@@ -10,6 +10,7 @@ import {
   Panel,
   Position,
   ReactFlow,
+  getBezierPath,
   getStraightPath,
   useNodesState,
   useReactFlow,
@@ -107,6 +108,7 @@ type PacketData = {
   duration?: number;
   muted?: boolean;
   packetKind?: BoardEdgeSemantic;
+  curved?: boolean;
 };
 type PacketEdge = Edge<PacketData, "packetEdge">;
 
@@ -125,6 +127,7 @@ type LoadedBoard = {
 };
 
 type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
+type SingleSourceFanout = { source: string; targets: [string, string] };
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
 const renderProtocol = "1";
@@ -382,8 +385,10 @@ function ShapeCard({ data }: NodeProps<ShapeNode>) {
   );
 }
 
-function PacketEdgeComponent({ id, sourceX, sourceY, targetX, targetY, data, markerEnd }: EdgeProps<PacketEdge>) {
-  const [edgePath, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+function PacketEdgeComponent({ id, sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, data, markerEnd }: EdgeProps<PacketEdge>) {
+  const [edgePath, labelX, labelY] = data?.curved
+    ? getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, curvature: 0.18 })
+    : getStraightPath({ sourceX, sourceY, targetX, targetY });
   const color = data?.color ?? "#687078";
   const active = Boolean(data?.active);
 
@@ -391,6 +396,7 @@ function PacketEdgeComponent({ id, sourceX, sourceY, targetX, targetY, data, mar
     <>
       <BaseEdge
         id={id}
+        className={`packet-edge-path${data?.curved ? " packet-edge-path--curved" : ""}`}
         path={edgePath}
         markerEnd={markerEnd}
         style={{
@@ -566,11 +572,36 @@ function nodePositionsForFlow(flow: BoardFlowConfig) {
   return positions;
 }
 
+function singleSourceFanout(flow: BoardFlowConfig): SingleSourceFanout | null {
+  if (flow.nodes.length !== 3) return null;
+
+  const forwardEdges = flow.edges.filter((edge) => edge.direction === "forward");
+  const sources = [...new Set(forwardEdges.map((edge) => edge.source))];
+  if (sources.length !== 1) return null;
+
+  const source = sources[0];
+  const targetSet = new Set(forwardEdges.filter((edge) => edge.source === source).map((edge) => edge.target));
+  const targets = flow.nodes.map((node) => node.id).filter((nodeId) => targetSet.has(nodeId));
+  if (targets.length !== 2 || new Set([source, ...targets]).size !== 3) return null;
+
+  return { source, targets: [targets[0], targets[1]] };
+}
+
 function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions): CanvasNode[] {
   const flow = flowConfigByMode[mode];
   const groupId = `${mode}-group`;
   const nodePositions = nodePositionsForFlow(flow);
-  const groupWidth = Math.max(1000, nodePositions.at(-1)! + debugNodeWidth + 64);
+  const fanout = singleSourceFanout(flow);
+  const groupWidth = fanout ? 1040 : Math.max(1000, nodePositions.at(-1)! + debugNodeWidth + 64);
+  const groupHeight = fanout ? 535 : 390;
+  const playbackY = fanout ? 390 : 252;
+
+  const servicePosition = (nodeId: string, index: number) => {
+    if (!fanout) return { x: nodePositions[index], y: 78 };
+    if (nodeId === fanout.source) return { x: 90, y: 143 };
+    const targetIndex = fanout.targets.indexOf(nodeId);
+    return { x: 700, y: targetIndex === 0 ? 68 : 218 };
+  };
 
   return [
     {
@@ -578,7 +609,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
       type: "flowGroup",
       position: groupPosition,
       data: { mode },
-      style: { width: groupWidth, height: 390 },
+      style: { width: groupWidth, height: groupHeight },
       draggable: true,
       selectable: true,
       zIndex: -1,
@@ -594,7 +625,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     ...flow.nodes.map((node, index) => ({
       id: `${mode}-${node.id}`,
       type: "debugNode" as const,
-      position: { x: nodePositions[index], y: 78 },
+      position: servicePosition(node.id, index),
       parentId: groupId,
       data: debugData(flowConfigByMode, mode, node.id, runtime),
       draggable: true,
@@ -602,7 +633,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     {
       id: `${mode}-playback`,
       type: "playbackNode",
-      position: { x: (groupWidth - 720) / 2, y: 252 },
+      position: { x: (groupWidth - 720) / 2, y: playbackY },
       parentId: groupId,
       data: playbackData(flowConfigByMode, mode, runtime, actions),
       draggable: true,
@@ -618,7 +649,10 @@ function flowEdges(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: Flow
     error: "#dc2626",
   };
 
-  return flowConfigByMode[mode].edges.map((edge) => {
+  const flow = flowConfigByMode[mode];
+  const fanout = singleSourceFanout(flow);
+
+  return flow.edges.map((edge) => {
     const active = edge.activeSteps.includes(runtime.step);
     const color = active ? semanticColor[edge.semantic] : "#687078";
     const returning = edge.direction === "return";
@@ -639,6 +673,7 @@ function flowEdges(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: Flow
         duration: 2.15,
         muted: edge.muted,
         packetKind: edge.semantic,
+        curved: Boolean(fanout && (edge.source === fanout.source || edge.target === fanout.source)),
       },
     } satisfies PacketEdge;
   });

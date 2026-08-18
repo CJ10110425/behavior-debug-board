@@ -75,6 +75,45 @@ async function seekFlow(page, flow, step) {
   await page.locator(`[data-testid="playback-card"][data-flow="${flow}"]`).waitFor({ state: "visible" });
 }
 
+function singleSourceFanouts(config) {
+  return config.flows.flatMap((flow) => {
+    if (flow.nodes.length !== 3) return [];
+    const forwardEdges = flow.edges.filter((edge) => edge.direction === "forward");
+    const sources = [...new Set(forwardEdges.map((edge) => edge.source))];
+    if (sources.length !== 1) return [];
+    const source = sources[0];
+    const targetSet = new Set(forwardEdges.filter((edge) => edge.source === source).map((edge) => edge.target));
+    const targets = flow.nodes.map((node) => node.id).filter((nodeId) => targetSet.has(nodeId));
+    if (targets.length !== 2 || new Set([source, ...targets]).size !== 3) return [];
+    return [{ flow: flow.id, source, targets }];
+  });
+}
+
+async function verifyFanoutLayout(page, config, checks) {
+  const fanouts = singleSourceFanouts(config);
+  if (fanouts.length === 0) return;
+  let expectedCurvedEdges = 0;
+
+  for (const fanout of fanouts) {
+    const source = await page.locator(`[data-testid="service-node"][data-flow="${fanout.flow}"][data-node-id="${fanout.source}"]`).boundingBox();
+    const targets = await Promise.all(fanout.targets.map((target) => (
+      page.locator(`[data-testid="service-node"][data-flow="${fanout.flow}"][data-node-id="${target}"]`).boundingBox()
+    )));
+    ensure(source && targets.every(Boolean), `${fanout.flow} fan-out cards have no bounding boxes`);
+    ensure(targets.every((target) => source.x + source.width < target.x), `${fanout.flow} fan-out source is not left of both targets`);
+    const targetCenters = targets.map((target) => target.y + target.height / 2);
+    ensure(Math.abs(targetCenters[0] - targetCenters[1]) >= 80, `${fanout.flow} fan-out targets are not visibly split into two branches`);
+    const flow = config.flows.find((candidate) => candidate.id === fanout.flow);
+    expectedCurvedEdges += flow.edges.filter((edge) => edge.source === fanout.source || edge.target === fanout.source).length;
+  }
+  const curvedPaths = page.locator(".packet-edge-path--curved");
+  ensure(await curvedPaths.count() === expectedCurvedEdges, `rendered ${await curvedPaths.count()} curved fan-out edges; expected ${expectedCurvedEdges}`);
+  const pathData = await curvedPaths.evaluateAll((paths) => paths.map((path) => path.getAttribute("d") ?? ""));
+  ensure(pathData.every((path) => path.includes("C") && !path.includes("NaN")), "fan-out edges are not valid cubic curves");
+  checks["fanout-layout"] = true;
+  checks["fanout-curves"] = true;
+}
+
 async function runFullInteractionQa(page, config, flow, checks) {
   const playback = page.locator(`[data-testid="playback-card"][data-flow="${flow}"]`);
   const totalSteps = Number(await playback.getAttribute("data-total-steps"));
@@ -228,6 +267,7 @@ export async function runBoardQa(options) {
     actual.labelNodeOverlaps = labelNodeOverlaps.length;
     ensure(labelNodeOverlaps.length === 0, `edge labels overlap service cards: ${JSON.stringify(labelNodeOverlaps)}`);
     checks["edge-label-clearance"] = true;
+    await verifyFanoutLayout(page, prepared.config, checks);
 
     if (options.finalStep) {
       const playback = page.locator(`[data-testid="playback-card"][data-flow="${options.flow}"]`);

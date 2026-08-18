@@ -10,7 +10,7 @@ const skillRoot = resolve(repoRoot, "skills/behavior-debug-board");
 
 test("skill package has the required contract, resources, resolver, and Logo MCP", async () => {
   const result = await validateSkill(skillRoot);
-  assert.equal(result.files, 9);
+  assert.equal(result.files, 11);
   assert.equal(result.categoryIcons, 17);
 });
 

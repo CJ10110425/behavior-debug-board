@@ -9,6 +9,8 @@ import { prepareBoard, prepareRuntimeBoard, validateBoardConfig } from "../skill
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const defaultConfigPath = resolve(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
 const defaultConfig = JSON.parse(await readFile(defaultConfigPath, "utf8"));
+const fanoutConfigPath = resolve(repoRoot, "skills/behavior-debug-board/assets/fanout-board.json");
+const fanoutConfig = JSON.parse(await readFile(fanoutConfigPath, "utf8"));
 
 function cloneConfig() {
   return structuredClone(defaultConfig);
@@ -24,6 +26,10 @@ function rejectsMutation(name, mutate, pattern) {
 
 test("accepts the bundled Before/After behavior board", () => {
   assert.equal(validateBoardConfig(cloneConfig()).title, defaultConfig.title);
+});
+
+test("accepts the bundled single-source fan-out behavior board", () => {
+  assert.equal(validateBoardConfig(structuredClone(fanoutConfig)).title, fanoutConfig.title);
 });
 
 rejectsMutation("requires config version 1", (config) => { config.version = 2; }, /version must be 1/);
