@@ -3,7 +3,7 @@
 - Canvas and graph state: `@xyflow/react` (React Flow / XYFlow).
 - UI runtime: React 19 with Vinext and Vite.
 - Edge geometry: React Flow `getStraightPath`; forward and return traffic use separate handles and separate edge records.
-- Topology layout: a three-card flow with one outbound source and two distinct targets automatically renders as a left-to-right fan-out with vertically split targets and low-curvature cubic Bézier paths; other flows retain the horizontal layout and straight paths.
+- Topology layout: a three-card flow with one outbound source and two distinct targets automatically renders as a left-to-right fan-out with vertically split targets and low-curvature cubic Bézier paths; the upper branch label sits above its path and the lower branch label sits below; other flows retain the horizontal layout and straight paths.
 - Edge-label layout: adjacent service-card gaps expand from the longest label estimate plus a safety margin; browser QA rejects any remaining label/card bounding-box intersection.
 - Packet motion: native SVG `<animateMotion>` on a grouped halo and dot.
 - Loading state: CSS spinner inside the active service card.

@@ -93,6 +93,8 @@ async function verifyFanoutLayout(page, config, checks) {
   const fanouts = singleSourceFanouts(config);
   if (fanouts.length === 0) return;
   let expectedCurvedEdges = 0;
+  let expectedAboveLabels = 0;
+  let expectedBelowLabels = 0;
 
   for (const fanout of fanouts) {
     const source = await page.locator(`[data-testid="service-node"][data-flow="${fanout.flow}"][data-node-id="${fanout.source}"]`).boundingBox();
@@ -104,14 +106,26 @@ async function verifyFanoutLayout(page, config, checks) {
     const targetCenters = targets.map((target) => target.y + target.height / 2);
     ensure(Math.abs(targetCenters[0] - targetCenters[1]) >= 80, `${fanout.flow} fan-out targets are not visibly split into two branches`);
     const flow = config.flows.find((candidate) => candidate.id === fanout.flow);
-    expectedCurvedEdges += flow.edges.filter((edge) => edge.source === fanout.source || edge.target === fanout.source).length;
+    const branchEdges = flow.edges.filter((edge) => edge.source === fanout.source || edge.target === fanout.source);
+    expectedCurvedEdges += branchEdges.length;
+    for (const edge of branchEdges) {
+      const branchNodeId = edge.source === fanout.source ? edge.target : edge.source;
+      const branchIndex = fanout.targets.indexOf(branchNodeId);
+      if (branchIndex === 0) expectedAboveLabels += 1;
+      if (branchIndex === 1) expectedBelowLabels += 1;
+    }
   }
   const curvedPaths = page.locator(".packet-edge-path--curved");
   ensure(await curvedPaths.count() === expectedCurvedEdges, `rendered ${await curvedPaths.count()} curved fan-out edges; expected ${expectedCurvedEdges}`);
   const pathData = await curvedPaths.evaluateAll((paths) => paths.map((path) => path.getAttribute("d") ?? ""));
   ensure(pathData.every((path) => path.includes("C") && !path.includes("NaN")), "fan-out edges are not valid cubic curves");
+  const aboveLabels = page.locator('[data-testid="edge-label"][data-label-lane="above"]');
+  const belowLabels = page.locator('[data-testid="edge-label"][data-label-lane="below"]');
+  ensure(await aboveLabels.count() === expectedAboveLabels, `rendered ${await aboveLabels.count()} upper fan-out labels; expected ${expectedAboveLabels}`);
+  ensure(await belowLabels.count() === expectedBelowLabels, `rendered ${await belowLabels.count()} lower fan-out labels; expected ${expectedBelowLabels}`);
   checks["fanout-layout"] = true;
   checks["fanout-curves"] = true;
+  checks["fanout-label-lanes"] = true;
 }
 
 async function runFullInteractionQa(page, config, flow, checks) {

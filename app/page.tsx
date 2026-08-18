@@ -104,6 +104,7 @@ type PacketData = {
   active?: boolean;
   color?: string;
   label?: string;
+  labelLane?: "above" | "below";
   labelOffset?: number;
   duration?: number;
   muted?: boolean;
@@ -421,6 +422,7 @@ function PacketEdgeComponent({ id, sourceX, sourceY, sourcePosition, targetX, ta
             className={`edge-label edge-label--${data.packetKind ?? "request"}`}
             data-testid="edge-label"
             data-edge-id={id}
+            data-label-lane={data.labelLane}
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + (data?.labelOffset ?? -24)}px)` }}
           >
             <span />
@@ -656,6 +658,15 @@ function flowEdges(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: Flow
     const active = edge.activeSteps.includes(runtime.step);
     const color = active ? semanticColor[edge.semantic] : "#687078";
     const returning = edge.direction === "return";
+    const branchNodeId = fanout
+      ? edge.source === fanout.source
+        ? edge.target
+        : edge.target === fanout.source
+          ? edge.source
+          : undefined
+      : undefined;
+    const branchIndex = fanout && branchNodeId ? fanout.targets.indexOf(branchNodeId) : -1;
+    const labelLane = branchIndex === 0 ? "above" : branchIndex === 1 ? "below" : undefined;
 
     return {
       id: `${mode}-${edge.id}`,
@@ -669,7 +680,8 @@ function flowEdges(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: Flow
         active,
         color,
         label: edge.label,
-        labelOffset: returning ? 24 : -24,
+        labelLane,
+        labelOffset: labelLane === "above" ? -24 : labelLane === "below" ? 24 : returning ? 24 : -24,
         duration: 2.15,
         muted: edge.muted,
         packetKind: edge.semantic,

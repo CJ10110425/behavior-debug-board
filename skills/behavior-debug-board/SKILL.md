@@ -49,7 +49,7 @@ Guarantee all of the following:
 
 ## Diagram Rules
 
-- Use 2–5 service nodes per flow. Keep linear peers on one horizontal band. For one source with exactly two outbound targets, place the source on the left, stack both targets on the right, and use low-curvature branch paths so the fan-out is unmistakable without looking decorative.
+- Use 2–5 service nodes per flow. Keep linear peers on one horizontal band. For one source with exactly two outbound targets, place the source on the left, stack both targets on the right, and use low-curvature branch paths so the fan-out is unmistakable without looking decorative. Put the upper branch label above its path and the lower branch label below its path.
 - Use `direction: "forward"` for outbound traffic and `direction: "return"` for responses/errors. Parallel tracks are mandatory for opposite directions.
 - Keep labels short and behavioral: `讀取 Profile`, `查詢資料`, `回傳 Profile`, `拒絕存取`.
 - Use blue for requests/loading, orange for processing/query, green for success/response, and red for failure. Keep the canvas and cards neutral.
