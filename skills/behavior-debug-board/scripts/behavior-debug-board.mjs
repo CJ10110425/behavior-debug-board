@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -29,9 +29,13 @@ function requiredString(value, location) {
   if (typeof value !== "string" || value.trim() === "") fail(`${location} must be a non-empty string`);
 }
 
+function validPosition(value) {
+  return value && Number.isFinite(value.x) && Number.isFinite(value.y);
+}
+
 export function validateBoardConfig(config) {
   if (!config || typeof config !== "object") fail("board config must be an object");
-  if (config.version !== 1) fail("board config version must be 1");
+  if (![1, 2].includes(config.version)) fail("board config version must be 1 or 2");
   requiredString(config.title, "title");
   if (!Array.isArray(config.flows) || config.flows.length !== 2) fail("flows must contain exactly Before and After");
 
@@ -46,9 +50,11 @@ export function validateBoardConfig(config) {
     requiredString(flow.label, `${flowPath}.label`);
     const expectedOutcome = flow.id === "before" ? "error" : "success";
     if (flow.outcome !== expectedOutcome) fail(`${flowPath}.outcome must be ${expectedOutcome}`);
-    if (!flow.position || !Number.isFinite(flow.position.x) || !Number.isFinite(flow.position.y)) {
+    if (!validPosition(flow.position)) {
       fail(`${flowPath}.position must contain numeric x and y`);
     }
+    if (flow.labelPosition !== undefined && !validPosition(flow.labelPosition)) fail(`${flowPath}.labelPosition must contain numeric x and y`);
+    if (flow.playbackPosition !== undefined && !validPosition(flow.playbackPosition)) fail(`${flowPath}.playbackPosition must contain numeric x and y`);
     if (!Array.isArray(flow.nodes) || flow.nodes.length < 2 || flow.nodes.length > 5) {
       fail(`${flowPath}.nodes must contain 2–5 service nodes`);
     }
@@ -61,12 +67,15 @@ export function validateBoardConfig(config) {
       requiredString(node.title, `${flowPath}.nodes.${node.id}.title`);
       requiredString(node.subtitle, `${flowPath}.nodes.${node.id}.subtitle`);
       requiredString(node.detail, `${flowPath}.nodes.${node.id}.detail`);
+      if (node.position !== undefined && !validPosition(node.position)) fail(`${flowPath}.nodes.${node.id}.position must contain numeric x and y`);
       if (nodeIds.has(node.id)) fail(`${flowPath} has duplicate node id: ${node.id}`);
       nodeIds.add(node.id);
       if (!nodeKinds.has(node.kind)) fail(`${flowPath}.nodes.${node.id}.kind is invalid`);
       if (node.changed !== undefined && typeof node.changed !== "boolean") fail(`${flowPath}.nodes.${node.id}.changed must be boolean`);
-      if (node.logo !== undefined && (typeof node.logo !== "string" || !/^\/logos\/[a-z0-9][a-z0-9._-]*\.svg$/i.test(node.logo))) {
-        fail(`${flowPath}.nodes.${node.id}.logo must be a local /logos/*.svg path`);
+      const bundledLogo = typeof node.logo === "string" && /^\/logos\/[a-z0-9][a-z0-9._-]*\.svg$/i.test(node.logo);
+      const boardLocalLogo = typeof node.logo === "string" && /^assets\/(?:[a-z0-9][a-z0-9._-]*\/)*[a-z0-9][a-z0-9._-]*\.svg$/i.test(node.logo);
+      if (node.logo !== undefined && !bundledLogo && !boardLocalLogo) {
+        fail(`${flowPath}.nodes.${node.id}.logo must be /logos/*.svg or a board-local assets/*.svg path`);
       }
       if (node.categoryIcon !== undefined && !categoryIcons.has(node.categoryIcon)) {
         fail(`${flowPath}.nodes.${node.id}.categoryIcon is invalid`);
@@ -119,6 +128,39 @@ export function validateBoardConfig(config) {
     });
   }
 
+  if (config.canvas !== undefined) {
+    if (config.version !== 2) fail("canvas persistence requires board config version 2");
+    if (!config.canvas || !Array.isArray(config.canvas.items) || !Array.isArray(config.canvas.edges)) {
+      fail("canvas must contain items and edges arrays");
+    }
+    const itemIds = new Set();
+    for (const item of config.canvas.items) {
+      requiredString(item.id, "canvas.items[].id");
+      requiredString(item.text, `canvas.items.${item.id}.text`);
+      if (itemIds.has(item.id)) fail(`canvas has duplicate item id: ${item.id}`);
+      itemIds.add(item.id);
+      if (!["text", "note", "shape"].includes(item.type)) fail(`canvas.items.${item.id}.type is invalid`);
+      if (!validPosition(item.position)) fail(`canvas.items.${item.id}.position must contain numeric x and y`);
+    }
+    const persistedNodeIds = new Set([
+      ...config.flows.flatMap((flow) => flow.nodes.map((node) => `${flow.id}-${node.id}`)),
+      ...itemIds,
+    ]);
+    const edgeIds = new Set();
+    for (const edge of config.canvas.edges) {
+      requiredString(edge.id, "canvas.edges[].id");
+      requiredString(edge.source, `canvas.edges.${edge.id}.source`);
+      requiredString(edge.target, `canvas.edges.${edge.id}.target`);
+      if (edgeIds.has(edge.id)) fail(`canvas has duplicate edge id: ${edge.id}`);
+      edgeIds.add(edge.id);
+      if (!persistedNodeIds.has(edge.source) || !persistedNodeIds.has(edge.target)) fail(`canvas.edges.${edge.id} references an unknown node`);
+      if (edge.source === edge.target) fail(`canvas.edges.${edge.id} cannot connect a node to itself`);
+      for (const field of ["sourceHandle", "targetHandle"]) {
+        if (edge[field] !== undefined && edge[field] !== null && typeof edge[field] !== "string") fail(`canvas.edges.${edge.id}.${field} must be a string or null`);
+      }
+    }
+  }
+
   return config;
 }
 
@@ -151,6 +193,18 @@ export async function prepareRuntimeBoard({ configPath, repoRoot, outputPath }) 
   const runtimePath = resolve(repoRoot, "public/runtime", `${configHash}.json`);
   await mkdir(dirname(runtimePath), { recursive: true });
   await writeFile(runtimePath, source, "utf8");
+  const boardDirectory = await realpath(dirname(absolutePath));
+  const localLogos = [...new Set(config.flows.flatMap((flow) => flow.nodes.map((node) => node.logo).filter((logo) => logo?.startsWith("assets/"))))];
+  for (const logo of localLogos) {
+    const sourcePath = await realpath(resolve(boardDirectory, logo));
+    const sourceRelative = relative(boardDirectory, sourcePath);
+    if (!sourceRelative || sourceRelative.startsWith("..") || isAbsolute(sourceRelative)) {
+      fail(`board-local logo escapes the board directory: ${logo}`);
+    }
+    const destinationPath = resolve(repoRoot, "public/runtime/assets", configHash, logo.slice("assets/".length));
+    await mkdir(dirname(destinationPath), { recursive: true });
+    await writeFile(destinationPath, await readFile(sourcePath));
+  }
 
   let mirrorPath;
   if (outputPath) {
@@ -214,13 +268,54 @@ async function resolveServerPort(requestedPort) {
   return availablePort();
 }
 
-export function makeBoardUrl(origin, configHash, { flow, finalStep, timeScale } = {}) {
+export function makeBoardUrl(origin, configHash, { flow, finalStep, timeScale, saveOrigin, saveToken } = {}) {
   const url = new URL(origin);
   url.searchParams.set("config", configHash);
   if (flow) url.searchParams.set("flow", flow);
   if (finalStep) url.searchParams.set("step", "final");
   if (timeScale) url.searchParams.set("timeScale", String(timeScale));
+  if (saveOrigin) url.searchParams.set("save", saveOrigin);
+  if (saveToken) url.searchParams.set("saveToken", saveToken);
   return url.toString();
+}
+
+async function startSaveBridge(configPath) {
+  const port = await availablePort();
+  const token = randomBytes(24).toString("hex");
+  const saveServerPath = resolve(scriptDirectory, "save-board-server.mjs");
+  const child = spawn(process.execPath, [saveServerPath], {
+    cwd: defaultRepoRoot,
+    env: {
+      ...process.env,
+      BOARD_SAVE_CONFIG: resolve(configPath),
+      BOARD_SAVE_PARENT_PID: String(process.pid),
+      BOARD_SAVE_PORT: String(port),
+      BOARD_SAVE_TOKEN: token,
+    },
+    stdio: "ignore",
+  });
+  const origin = `http://127.0.0.1:${port}`;
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(`${origin}/health`, { headers: { "x-board-token": token } });
+      if (response.ok) return {
+        origin,
+        token,
+        pid: child.pid,
+        stop: () => { if (child.exitCode === null) child.kill("SIGTERM"); },
+      };
+    } catch {
+      // The local save bridge is still starting.
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+  }
+  try {
+    process.kill(child.pid, "SIGTERM");
+  } catch {
+    // The save bridge already exited while readiness was being checked.
+  }
+  fail("local save bridge did not become ready");
 }
 
 export async function startBoardServer({ repoRoot, port }) {
@@ -280,9 +375,12 @@ export async function launchBoard({ configPath, outputPath, repoRoot, port, shou
   const absoluteRepoRoot = resolve(repoRoot);
   const prepared = await prepareRuntimeBoard({ configPath, outputPath, repoRoot: absoluteRepoRoot });
   const server = await startBoardServer({ repoRoot: absoluteRepoRoot, port });
-  const url = makeBoardUrl(server.origin, prepared.configHash);
+  const saveBridge = await startSaveBridge(prepared.configPath);
+  const url = makeBoardUrl(server.origin, prepared.configHash, { saveOrigin: saveBridge.origin, saveToken: saveBridge.token });
 
   console.log(`BOARD_CONFIG_LOADED sha256=${prepared.configHash} path=${prepared.runtimePath}`);
+  console.log(`BOARD_LOCAL_SOURCE ${prepared.configPath}`);
+  console.log(`BOARD_SAVE_READY ${saveBridge.origin} pid=${saveBridge.pid}`);
   console.log(`${server.reused ? "BOARD_SERVER_REUSED" : "BOARD_SERVER_STARTED"} ${server.origin}`);
   console.log(`BOARD_SERVER_READY ${server.origin}`);
   console.log(`BOARD_URL ${url}`);
@@ -294,6 +392,8 @@ export async function launchBoard({ configPath, outputPath, repoRoot, port, shou
     console.log("BOARD_OPENED pending-codex-browser");
   }
   console.log(`BOARD_DURATION_MS ${Date.now() - startedAt}`);
+  process.once("SIGINT", saveBridge.stop);
+  process.once("SIGTERM", saveBridge.stop);
   if (server.reused) return { code: 0, signal: null, url, reused: true };
   return server.completion;
 }

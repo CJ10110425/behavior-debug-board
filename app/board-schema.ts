@@ -26,6 +26,7 @@ export type BoardNodeConfig = {
   title: string;
   subtitle: string;
   detail: string;
+  position?: { x: number; y: number };
   kind: BoardNodeKind;
   logo?: string;
   categoryIcon?: BoardCategoryIcon;
@@ -55,13 +56,34 @@ export type BoardFlowConfig = {
   label: string;
   outcome: "error" | "success";
   position: { x: number; y: number };
+  labelPosition?: { x: number; y: number };
+  playbackPosition?: { x: number; y: number };
   nodes: BoardNodeConfig[];
   edges: BoardEdgeConfig[];
   steps: BoardStepConfig[];
 };
 
+export type BoardCanvasItemConfig = {
+  id: string;
+  type: "text" | "note" | "shape";
+  position: { x: number; y: number };
+  text: string;
+};
+
+export type BoardCanvasEdgeConfig = {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+};
+
 export type BoardConfig = {
-  version: 1;
+  version: 1 | 2;
   title: string;
   flows: [BoardFlowConfig, BoardFlowConfig];
+  canvas?: {
+    items: BoardCanvasItemConfig[];
+    edges: BoardCanvasEdgeConfig[];
+  };
 };

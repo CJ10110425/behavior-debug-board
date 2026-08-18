@@ -88,6 +88,65 @@ textarea:focus-visible {
 .canvas-toolbar button:last-child { border-bottom: 0; }
 .canvas-toolbar button:hover { color: var(--ink); background: #f1f2f2; }
 
+.react-flow .board-save-panel.react-flow__panel {
+  margin: 16px !important;
+}
+
+.board-save-panel > div {
+  display: grid;
+  min-width: 238px;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 0.97);
+  box-shadow: 2px 3px 0 rgb(32 36 40 / 0.08);
+}
+
+.board-save-panel__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #92999e;
+}
+
+.board-save-panel__dot--saved { background: var(--green); }
+.board-save-panel__dot--dirty,
+.board-save-panel__dot--saving { background: #d88a00; }
+.board-save-panel__dot--error { background: var(--red); }
+
+.board-save-panel strong,
+.board-save-panel small { display: block; }
+
+.board-save-panel strong {
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.board-save-panel small {
+  max-width: 148px;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-save-panel button {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.board-save-panel button:hover:not(:disabled) { background: #f1f2f2; }
+.board-save-panel button:disabled { cursor: default; opacity: 0.45; }
+
 .react-flow .creation-toolbar.react-flow__panel {
   top: 50% !important;
   right: auto !important;

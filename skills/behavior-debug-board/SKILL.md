@@ -1,6 +1,6 @@
 ---
 name: behavior-debug-board
-description: Create and open a local animated before/after debugging board that explains behavior changes through service cards, directional request/response lines, persistent edge labels, brand logos, loading states, and replay controls. Use when a user asks to visualize a bug, debug flow, behavior diff, permission failure, request/response path, or wants a local whiteboard instead of a text or code diff.
+description: Create, persist, optionally Git-version, and open a local animated before/after debugging board with service cards, directional request/response lines, brand logos, loading states, and replay controls. Use for visualizing bugs, debug flows, behavior diffs, permission failures, request/response paths, local whiteboards, or requests to save, version, diff, commit, or restore a behavior board.
 ---
 
 # Behavior Debug Board
@@ -15,6 +15,8 @@ Guarantee all of the following:
 - Give every direction its own edge. Never reuse one geometric line for request and response.
 - Render every edge, arrowhead, and label before playback starts. Playback only highlights an existing edge and moves its packet.
 - Keep every service card title and description directly editable on the canvas, and preserve edits while playback changes card status.
+- Persist the full semantic board, canvas items, layout, and logo assets to an explicit local bundle. Browser memory or `localStorage` is never the sole copy.
+- Ask whether to use Git before creating files unless the user already chose. Git mode includes safe local branch/commit work but never implies push or PR permission.
 - Reserve enough horizontal space for the longest directional label between adjacent cards; edge labels must never overlap service cards in the initial fitted layout.
 - Describe behavior, cause, and user-visible result. Do not expose commit hashes or code diffs unless requested.
 - Preserve official brand colors and store fetched SVGs locally for offline use.
@@ -24,10 +26,12 @@ Guarantee all of the following:
 
 ## Workflow
 
-1. Gather the bug symptom, actors/services, observed path, root cause, fix, and verified result.
-2. Read [references/board-schema.md](references/board-schema.md), then write a version-1 board JSON file.
-3. For named products, read [references/logo-mcp.md](references/logo-mcp.md). Try the Logo MCP first, then search the web for an official brand/media asset and trusted registries. Save a trustworthy SVG under `public/logos/` and record its source. If no reliable logo exists, classify the service and set `categoryIcon`; never invent a brand mark.
-4. Run the fast browser QA. This validates the config, chooses/reuses a port, waits for React Flow hydration/layout/fit-view, verifies node/edge/label counts, opens the selected flow at its final step, and writes a correctly typed screenshot plus JSON report:
+1. Read [references/local-storage-and-git.md](references/local-storage-and-git.md). If the request does not already state a storage preference, present its Git/local-only choice gate and stop. Do not gather content or write files until the user answers.
+2. Resolve the storage bundle from the answer. In Git mode, create/use a feature branch and preserve unrelated changes. In local-only mode, use the durable per-project directory; never use `/tmp`.
+3. Gather the bug symptom, actors/services, observed path, root cause, fix, and verified result.
+4. Read [references/board-schema.md](references/board-schema.md), then write `board.json` inside the resolved local bundle.
+5. For named products, read [references/logo-mcp.md](references/logo-mcp.md). Try the Logo MCP first, then search the web for an official brand/media asset and trusted registries. Save trustworthy SVGs under the bundle's `assets/` directory and record their source. If no reliable logo exists, use a category icon; never invent a brand mark.
+6. Run the fast browser QA. This validates the config, chooses/reuses a port, waits for React Flow hydration/layout/fit-view, verifies node/edge/label counts, opens the selected flow at its final step, and writes a correctly typed screenshot plus JSON report:
 
    ```bash
    node skills/behavior-debug-board/scripts/behavior-debug-board.mjs qa \
@@ -38,15 +42,16 @@ Guarantee all of the following:
      --screenshot /absolute/path/to/result.jpg
    ```
 
-5. Use `--full` when changing the renderer itself. Full QA additionally exercises replay, loading, drag, zoom, fit-view, and any detected single-source fan-out layout. Do not pay this cost for every generated board.
-6. Launch the local board for the user:
+7. Use `--full` when changing the renderer itself. Full QA additionally exercises local save, replay, loading, drag, zoom, fit-view, and detected fan-out layout.
+8. Launch the local board for the user. The launcher starts a token-protected localhost Save Bridge, so canvas edits and `Cmd+S` update the source `board.json`:
 
    ```bash
    node skills/behavior-debug-board/scripts/behavior-debug-board.mjs launch --config /absolute/path/to/board.json --port auto
    ```
 
-7. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_SERVER_READY`, then open the printed hash-addressed `BOARD_URL` in that browser. Otherwise let the launcher open the system browser.
-8. Report the `BOARD_QA_REPORT` and `BOARD_SCREENSHOT` paths. A screenshot captured before `data-board-ready="true"` is invalid.
+9. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_SERVER_READY`, then open the printed hash-addressed `BOARD_URL` in that browser. Otherwise let the launcher open the system browser.
+10. In Git mode, re-run QA after the last save, inspect `git status` and the exact board diff, stage only the bundle, and create a coherent local commit. Do not push without a separate explicit request.
+11. Report the local source path, storage mode, Git branch/status when applicable, QA report, and screenshot. A screenshot captured before `data-board-ready="true"` is invalid.
 
 ## Diagram Rules
 
@@ -63,6 +68,7 @@ Guarantee all of the following:
 - [references/logo-mcp.md](references/logo-mcp.md): MCP tools, fallback chain, and local asset workflow.
 - [references/logo-sources.md](references/logo-sources.md): bundled logo provenance and trademark notes.
 - [references/rendering-stack.md](references/rendering-stack.md): renderer, animation, and UI-icon implementation.
+- [references/local-storage-and-git.md](references/local-storage-and-git.md): mandatory local persistence, first-turn Git choice, safe branch/commit rules, and tracked bundle layout.
 - `assets/example-board.json`: smallest complete Before/After configuration to copy and edit.
 - `assets/fanout-board.json`: single-source/two-target regression fixture for curved branch layout.
 - `assets/logos/`: offline Firebase, Firestore, and Cloud Run fallbacks.
@@ -75,6 +81,7 @@ Return:
 
 ```text
 Board: <absolute config path>
+Storage: Git tracked <branch/status> | local only
 URL: http://localhost:<port>/?config=<sha256>
 Opened: Codex browser | system browser
 Flows: Before <node/edge counts>; After <node/edge counts>

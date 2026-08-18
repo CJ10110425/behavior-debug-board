@@ -16,8 +16,10 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
     skill: resolve(skillRoot, "SKILL.md"),
     manifest: resolve(skillRoot, "agents/openai.yaml"),
     launcher: resolve(skillRoot, "scripts/behavior-debug-board.mjs"),
+    saveServer: resolve(skillRoot, "scripts/save-board-server.mjs"),
     qa: resolve(skillRoot, "scripts/qa-board.mjs"),
     schema: resolve(skillRoot, "references/board-schema.md"),
+    storage: resolve(skillRoot, "references/local-storage-and-git.md"),
     logoMcp: resolve(skillRoot, "references/logo-mcp.md"),
     rendering: resolve(skillRoot, "references/rendering-stack.md"),
     fanout: resolve(skillRoot, "assets/fanout-board.json"),
@@ -49,6 +51,8 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/Producing JSON without opening the board is incomplete/.test(skill), "skill must reject JSON-only completion");
   assert(/BOARD_RENDERED/.test(skill) && /BOARD_QA_PASS/.test(skill), "skill contract must distinguish server and render readiness");
   assert(/--full/.test(skill), "skill must document full renderer regression QA");
+  assert(/Git.*choice gate|Git\/local-only choice gate/.test(skill), "skill must require an upfront Git choice gate");
+  assert(/Browser memory or `localStorage` is never the sole copy/.test(skill), "skill must require durable local persistence");
   assert(/value: "thesvg"/.test(manifest), "agents/openai.yaml must declare the Logo MCP dependency");
   assert(/allow_implicit_invocation: true/.test(manifest), "skill must allow implicit routing");
   assert(/behavior-debug-board/.test(resolver) && /本地端動態 Board/.test(resolver), "resolver entry is missing");

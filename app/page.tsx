@@ -87,9 +87,9 @@ type PlaybackData = {
   onReplay: () => void;
   onSeek: (step: number) => void;
 };
-type FreeTextData = { text: string };
-type NoteData = { text: string };
-type ShapeData = { text: string };
+type FreeTextData = { text: string; autoFocus?: boolean };
+type NoteData = { text: string; autoFocus?: boolean };
+type ShapeData = { text: string; autoFocus?: boolean };
 
 type FlowGroupNode = Node<GroupData, "flowGroup">;
 type LabelNode = Node<LabelData, "labelNode">;
@@ -124,6 +124,8 @@ type LoadedBoard = {
   configHash: string;
   finalStep: boolean;
   initialFlow: Mode;
+  saveEndpoint?: string;
+  saveToken?: string;
   timeScale: number;
 };
 
@@ -131,7 +133,7 @@ type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
 type SingleSourceFanout = { source: string; targets: [string, string] };
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
-const renderProtocol = "1";
+const renderProtocol = "2";
 const debugNodeWidth = 226;
 const minimumNodeGap = 84;
 const edgeLabelChromeWidth = 26;
@@ -225,14 +227,16 @@ function FlowGroupCard({ data, selected }: NodeProps<FlowGroupNode>) {
   );
 }
 
-function TextLabelCard({ data }: NodeProps<LabelNode>) {
+function TextLabelCard({ id, data }: NodeProps<LabelNode>) {
+  const { updateNodeData } = useReactFlow<LabelNode, PacketEdge>();
   return (
     <label className={`text-label-card text-label-card--${data.mode}`}>
       <SvgIcon name="grip" size={14} />
       <input
         className="nodrag nowheel nopan"
-        defaultValue={data.value}
+        value={data.value}
         aria-label={`${data.mode} flow label`}
+        onChange={(event) => updateNodeData(id, { value: event.target.value })}
         onKeyDown={(event) => event.stopPropagation()}
       />
     </label>
@@ -345,9 +349,10 @@ function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
   );
 }
 
-function FreeTextCard({ data }: NodeProps<FreeTextNode>) {
+function FreeTextCard({ id, data }: NodeProps<FreeTextNode>) {
+  const { updateNodeData } = useReactFlow<FreeTextNode, PacketEdge>();
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  useEffect(() => { if (data.autoFocus) inputRef.current?.focus(); }, [data.autoFocus]);
 
   return (
     <div className="canvas-text-item">
@@ -355,17 +360,19 @@ function FreeTextCard({ data }: NodeProps<FreeTextNode>) {
       <input
         ref={inputRef}
         className="nodrag nowheel nopan"
-        defaultValue={data.text}
+        value={data.text}
         aria-label="畫布文字"
+        onChange={(event) => updateNodeData(id, { text: event.target.value, autoFocus: false })}
         onKeyDown={(event) => event.stopPropagation()}
       />
     </div>
   );
 }
 
-function NoteCard({ data }: NodeProps<NoteNode>) {
+function NoteCard({ id, data }: NodeProps<NoteNode>) {
+  const { updateNodeData } = useReactFlow<NoteNode, PacketEdge>();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => textareaRef.current?.focus(), []);
+  useEffect(() => { if (data.autoFocus) textareaRef.current?.focus(); }, [data.autoFocus]);
 
   return (
     <div className="canvas-note-item">
@@ -374,8 +381,9 @@ function NoteCard({ data }: NodeProps<NoteNode>) {
       <textarea
         ref={textareaRef}
         className="nodrag nowheel nopan"
-        defaultValue={data.text}
+        value={data.text}
         aria-label="畫布便條"
+        onChange={(event) => updateNodeData(id, { text: event.target.value, autoFocus: false })}
         onKeyDown={(event) => event.stopPropagation()}
       />
       <Handle type="source" position={Position.Right} className="debug-handle" />
@@ -383,9 +391,10 @@ function NoteCard({ data }: NodeProps<NoteNode>) {
   );
 }
 
-function ShapeCard({ data }: NodeProps<ShapeNode>) {
+function ShapeCard({ id, data }: NodeProps<ShapeNode>) {
+  const { updateNodeData } = useReactFlow<ShapeNode, PacketEdge>();
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  useEffect(() => { if (data.autoFocus) inputRef.current?.focus(); }, [data.autoFocus]);
 
   return (
     <div className="canvas-shape-item">
@@ -394,8 +403,9 @@ function ShapeCard({ data }: NodeProps<ShapeNode>) {
       <input
         ref={inputRef}
         className="nodrag nowheel nopan"
-        defaultValue={data.text}
+        value={data.text}
         aria-label="矩形標籤"
+        onChange={(event) => updateNodeData(id, { text: event.target.value, autoFocus: false })}
         onKeyDown={(event) => event.stopPropagation()}
       />
       <Handle type="source" position={Position.Right} className="debug-handle" />
@@ -525,7 +535,7 @@ function sequenceFor(flowConfigByMode: FlowConfigByMode, mode: Mode) {
   return flowConfigByMode[mode].steps;
 }
 
-function debugData(flowConfigByMode: FlowConfigByMode, mode: Mode, nodeId: string, runtime: FlowRuntime): DebugNodeData {
+function debugData(flowConfigByMode: FlowConfigByMode, mode: Mode, nodeId: string, runtime: FlowRuntime, assetBase?: string): DebugNodeData {
   const flow = flowConfigByMode[mode];
   const node = flow.nodes.find((candidate) => candidate.id === nodeId);
   if (!node) throw new Error(`Unknown ${mode} node: ${nodeId}`);
@@ -536,7 +546,7 @@ function debugData(flowConfigByMode: FlowConfigByMode, mode: Mode, nodeId: strin
     title: node.title,
     subtitle: node.subtitle,
     kind: node.kind,
-    logo: node.logo,
+    logo: node.logo?.startsWith("assets/") && assetBase ? `${assetBase}/${node.logo.slice("assets/".length)}` : node.logo,
     categoryIcon: node.categoryIcon,
     status: flow.steps[runtime.step].nodeStatuses[node.id] ?? "idle",
     changed: node.changed,
@@ -606,7 +616,7 @@ function singleSourceFanout(flow: BoardFlowConfig): SingleSourceFanout | null {
   return { source, targets: [targets[0], targets[1]] };
 }
 
-function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions): CanvasNode[] {
+function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions, assetBase?: string): CanvasNode[] {
   const flow = flowConfigByMode[mode];
   const groupId = `${mode}-group`;
   const nodePositions = nodePositionsForFlow(flow);
@@ -616,6 +626,8 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
   const playbackY = fanout ? 390 : 252;
 
   const servicePosition = (nodeId: string, index: number) => {
+    const persisted = flow.nodes.find((node) => node.id === nodeId)?.position;
+    if (persisted) return persisted;
     if (!fanout) return { x: nodePositions[index], y: 78 };
     if (nodeId === fanout.source) return { x: 90, y: 143 };
     const targetIndex = fanout.targets.indexOf(nodeId);
@@ -636,7 +648,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     {
       id: `${mode}-label`,
       type: "labelNode",
-      position: { x: 36, y: 18 },
+      position: flow.labelPosition ?? { x: 36, y: 18 },
       parentId: groupId,
       data: { mode, value: flow.label },
       draggable: true,
@@ -646,18 +658,90 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
       type: "debugNode" as const,
       position: servicePosition(node.id, index),
       parentId: groupId,
-      data: debugData(flowConfigByMode, mode, node.id, runtime),
+      data: debugData(flowConfigByMode, mode, node.id, runtime, assetBase),
       draggable: true,
     })),
     {
       id: `${mode}-playback`,
       type: "playbackNode",
-      position: { x: (groupWidth - 720) / 2, y: playbackY },
+      position: flow.playbackPosition ?? { x: (groupWidth - 720) / 2, y: playbackY },
       parentId: groupId,
       data: playbackData(flowConfigByMode, mode, runtime, actions),
       draggable: true,
     },
   ];
+}
+
+function persistedCanvasNodes(boardConfig: BoardConfig): CanvasNode[] {
+  return (boardConfig.canvas?.items ?? []).map((item) => ({
+    id: item.id,
+    type: item.type === "text" ? "freeTextNode" : item.type === "note" ? "noteNode" : "shapeNode",
+    position: item.position,
+    data: { text: item.text, autoFocus: false },
+    draggable: true,
+    zIndex: 2,
+  } as CanvasNode));
+}
+
+function persistedCanvasEdges(boardConfig: BoardConfig): PacketEdge[] {
+  return (boardConfig.canvas?.edges ?? []).map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle,
+    targetHandle: edge.targetHandle,
+    type: "packetEdge",
+    markerEnd: { type: MarkerType.ArrowClosed, color: "#4c5964" },
+    data: { color: "#4c5964", packetKind: "request" },
+  }));
+}
+
+function stablePosition(position: { x: number; y: number }) {
+  return { x: Math.round(position.x * 100) / 100, y: Math.round(position.y * 100) / 100 };
+}
+
+function persistedBoardDocument(boardConfig: BoardConfig, nodes: CanvasNode[], customEdges: PacketEdge[]): BoardConfig {
+  const document = structuredClone(boardConfig);
+  document.version = 2;
+  document.flows = document.flows.map((flow) => {
+    const groupNode = nodes.find((node) => node.id === `${flow.id}-group`);
+    const labelNode = nodes.find((node): node is LabelNode => node.id === `${flow.id}-label` && node.type === "labelNode");
+    const playbackNode = nodes.find((node) => node.id === `${flow.id}-playback`);
+    return {
+      ...flow,
+      label: labelNode?.data.value ?? flow.label,
+      position: groupNode ? stablePosition(groupNode.position) : flow.position,
+      labelPosition: labelNode ? stablePosition(labelNode.position) : flow.labelPosition,
+      playbackPosition: playbackNode ? stablePosition(playbackNode.position) : flow.playbackPosition,
+      nodes: flow.nodes.map((configNode) => {
+        const renderedNode = nodes.find((node): node is DebugNode => node.id === `${flow.id}-${configNode.id}` && node.type === "debugNode");
+        if (!renderedNode) return configNode;
+        return {
+          ...configNode,
+          title: renderedNode.data.title,
+          subtitle: renderedNode.data.subtitle,
+          position: stablePosition(renderedNode.position),
+        };
+      }),
+    };
+  }) as BoardConfig["flows"];
+
+  document.canvas = {
+    items: nodes.flatMap((node) => {
+      if (node.type === "freeTextNode") return [{ id: node.id, type: "text" as const, position: stablePosition(node.position), text: node.data.text }];
+      if (node.type === "noteNode") return [{ id: node.id, type: "note" as const, position: stablePosition(node.position), text: node.data.text }];
+      if (node.type === "shapeNode") return [{ id: node.id, type: "shape" as const, position: stablePosition(node.position), text: node.data.text }];
+      return [];
+    }),
+    edges: customEdges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+    })),
+  };
+  return document;
 }
 
 function flowEdges(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: FlowRuntime): PacketEdge[] {
@@ -737,9 +821,49 @@ async function waitForCanvasAssets() {
   }));
 }
 
+type SaveMeta = {
+  path?: string;
+  message?: string;
+  git?: { tracked: boolean; branch?: string; status?: string };
+};
+
+function BoardSavePanel({ enabled, state, meta, onSave }: {
+  enabled: boolean;
+  state: "saved" | "dirty" | "saving" | "error";
+  meta: SaveMeta;
+  onSave: () => void;
+}) {
+  const label = !enabled
+    ? "未連接本地檔案"
+    : state === "saving"
+      ? "儲存中…"
+      : state === "dirty"
+        ? "尚未儲存"
+        : state === "error"
+          ? "儲存失敗"
+          : "已存到本機";
+  const gitLabel = meta.git?.tracked
+    ? `${meta.git.branch ?? "Git"} · ${meta.git.status === "clean" ? "Git clean" : "Git 未提交"}`
+    : "未啟用 Git 版控";
+
+  return (
+    <Panel position="top-right" className="board-save-panel">
+      <div data-testid="board-save-status" data-save-state={state}>
+        <span className={`board-save-panel__dot board-save-panel__dot--${state}`} />
+        <div>
+          <strong>{label}</strong>
+          <small title={meta.path}>{state === "error" ? meta.message : gitLabel}</small>
+        </div>
+        <button type="button" data-testid="board-save-button" disabled={!enabled || state === "saving"} onClick={onSave}>儲存</button>
+      </div>
+    </Panel>
+  );
+}
+
 function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
-  const { config: boardConfig, configHash, finalStep, initialFlow, timeScale } = loaded;
+  const { config: boardConfig, configHash, finalStep, initialFlow, saveEndpoint, saveToken, timeScale } = loaded;
   const flowConfigByMode = useMemo(() => Object.fromEntries(boardConfig.flows.map((flow) => [flow.id, flow])) as FlowConfigByMode, [boardConfig]);
+  const assetBase = configHash === "embedded" ? undefined : `/runtime/assets/${configHash}`;
   const initialRuntime = useCallback((mode: Mode): FlowRuntime => ({
     step: finalStep && initialFlow === mode ? flowConfigByMode[mode].steps.length - 1 : 0,
     playing: false,
@@ -748,8 +872,24 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
   const [after, setAfter] = useState<FlowRuntime>(() => initialRuntime("after"));
   const [tool, setTool] = useState<CanvasTool>("select");
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<CanvasNode, PacketEdge> | null>(null);
-  const [customEdges, setCustomEdges] = useState<PacketEdge[]>([]);
+  const [customEdges, setCustomEdges] = useState<PacketEdge[]>(() => persistedCanvasEdges(boardConfig));
   const [boardReady, setBoardReady] = useState(false);
+  const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
+  const [saveMeta, setSaveMeta] = useState<SaveMeta>({});
+  const [savedHash, setSavedHash] = useState(configHash);
+
+  useEffect(() => {
+    if (!saveEndpoint || !saveToken) return;
+    void fetch(`${saveEndpoint}/health`, { headers: { "x-board-token": saveToken } })
+      .then(async (response) => {
+        const result = await response.json() as { path?: string; git?: SaveMeta["git"] };
+        if (response.ok) setSaveMeta({ path: result.path, git: result.git });
+      })
+      .catch(() => {
+        setSaveMeta({ message: "無法讀取本地儲存狀態" });
+        setSaveState("error");
+      });
+  }, [saveEndpoint, saveToken]);
 
   useFlowPlayback(before, setBefore, flowConfigByMode.before.steps.length, timeScale);
   useFlowPlayback(after, setAfter, flowConfigByMode.after.steps.length, timeScale);
@@ -767,17 +907,63 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
   }), []);
 
   const initialNodes: CanvasNode[] = [
-    ...flowNodes(flowConfigByMode, "before", flowConfigByMode.before.position, before, beforeActions),
-    ...flowNodes(flowConfigByMode, "after", flowConfigByMode.after.position, after, afterActions),
+    ...flowNodes(flowConfigByMode, "before", flowConfigByMode.before.position, before, beforeActions, assetBase),
+    ...flowNodes(flowConfigByMode, "after", flowConfigByMode.after.position, after, afterActions, assetBase),
+    ...persistedCanvasNodes(boardConfig),
   ];
 
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
+  const persistedDocument = useMemo(() => persistedBoardDocument(boardConfig, nodes, customEdges), [boardConfig, customEdges, nodes]);
+  const persistedSource = useMemo(() => `${JSON.stringify(persistedDocument, null, 2)}\n`, [persistedDocument]);
+  const savedSourceRef = useRef(persistedSource);
+
+  useEffect(() => {
+    if (persistedSource !== savedSourceRef.current && saveState === "saved") setSaveState("dirty");
+  }, [persistedSource, saveState]);
+
+  const saveBoard = useCallback(async () => {
+    if (!saveEndpoint || !saveToken) return;
+    setSaveState("saving");
+    try {
+      const response = await fetch(`${saveEndpoint}/save`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-board-token": saveToken },
+        body: JSON.stringify({ baseHash: savedHash, config: persistedDocument }),
+      });
+      const result = await response.json() as { error?: string; path?: string; sha256?: string; git?: SaveMeta["git"] };
+      if (!response.ok || !result.sha256) throw new Error(result.error ?? `save returned HTTP ${response.status}`);
+      savedSourceRef.current = persistedSource;
+      setSavedHash(result.sha256);
+      setSaveMeta({ path: result.path, git: result.git });
+      setSaveState("saved");
+    } catch (error) {
+      setSaveMeta({ message: error instanceof Error ? error.message : String(error) });
+      setSaveState("error");
+    }
+  }, [persistedDocument, persistedSource, saveEndpoint, saveToken, savedHash]);
+
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        void saveBoard();
+      }
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [saveBoard]);
+
+  useEffect(() => {
+    if (saveState !== "dirty" || !saveEndpoint || !saveToken) return;
+    const timer = window.setTimeout(() => { void saveBoard(); }, 1_000);
+    return () => window.clearTimeout(timer);
+  }, [persistedSource, saveBoard, saveEndpoint, saveState, saveToken]);
 
   useEffect(() => {
     setNodes((current) => current.map((node) => {
       if (node.type === "debugNode") {
         const runtime = node.data.mode === "before" ? before : after;
-        const runtimeData = debugData(flowConfigByMode, node.data.mode, node.data.nodeId, runtime);
+        const runtimeData = debugData(flowConfigByMode, node.data.mode, node.data.nodeId, runtime, assetBase);
         return { ...node, data: { ...runtimeData, title: node.data.title, subtitle: node.data.subtitle } };
       }
       if (node.type === "playbackNode") {
@@ -787,7 +973,7 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
       }
       return node;
     }));
-  }, [after, afterActions, before, beforeActions, flowConfigByMode, setNodes]);
+  }, [after, afterActions, assetBase, before, beforeActions, flowConfigByMode, setNodes]);
 
   const edges = useMemo<PacketEdge[]>(() => [
     ...flowEdges(flowConfigByMode, "before", before),
@@ -807,7 +993,7 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
         id,
         type: "freeTextNode",
         position: { x: point.x - 86, y: point.y - 22 },
-        data: { text: "輸入文字" },
+        data: { text: "輸入文字", autoFocus: true },
         draggable: true,
         zIndex: 2,
       };
@@ -816,7 +1002,7 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
         id,
         type: "noteNode",
         position: { x: point.x - 90, y: point.y - 58 },
-        data: { text: "輸入除錯註記…" },
+        data: { text: "輸入除錯註記…", autoFocus: true },
         draggable: true,
         zIndex: 2,
       };
@@ -825,7 +1011,7 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
         id,
         type: "shapeNode",
         position: { x: point.x - 96, y: point.y - 48 },
-        data: { text: "新的節點" },
+        data: { text: "新的節點", autoFocus: true },
         draggable: true,
         zIndex: 2,
       };
@@ -904,6 +1090,12 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
         <Background gap={22} size={1.15} color="#d6d9dc" />
         <CanvasToolbar />
         <CreationToolbar tool={tool} onToolChange={setTool} />
+        <BoardSavePanel
+          enabled={Boolean(saveEndpoint && saveToken)}
+          state={saveState}
+          meta={saveMeta}
+          onSave={() => { void saveBoard(); }}
+        />
       </ReactFlow>
     </main>
   );
@@ -926,9 +1118,14 @@ export default function Home() {
       const finalStep = params.get("step") === "final";
       const requestedTimeScale = Number(params.get("timeScale") ?? "1");
       const timeScale = Number.isFinite(requestedTimeScale) && requestedTimeScale > 0 ? Math.max(0.01, requestedTimeScale) : 1;
+      const requestedSaveEndpoint = params.get("save") ?? undefined;
+      const requestedSaveToken = params.get("saveToken") ?? undefined;
+      const validSaveEndpoint = requestedSaveEndpoint && /^http:\/\/127\.0\.0\.1:\d+$/.test(requestedSaveEndpoint);
+      const validSaveToken = requestedSaveToken && /^[a-f0-9]{48}$/.test(requestedSaveToken);
+      if ((requestedSaveEndpoint || requestedSaveToken) && (!validSaveEndpoint || !validSaveToken)) throw new Error("Invalid local save session");
 
       if (!requestedHash) {
-        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", finalStep, initialFlow, timeScale });
+        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
         return;
       }
       if (!/^[a-f0-9]{64}$/.test(requestedHash)) throw new Error("Invalid runtime config hash");
@@ -938,7 +1135,7 @@ export default function Home() {
       const source = await response.text();
       const actualHash = await sha256(source);
       if (actualHash !== requestedHash) throw new Error(`Runtime config hash mismatch: expected ${requestedHash}, received ${actualHash}`);
-      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, finalStep, initialFlow, timeScale });
+      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
     };
 
     void load().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : String(error)));

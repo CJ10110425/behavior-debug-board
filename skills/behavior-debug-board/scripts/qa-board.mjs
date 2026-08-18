@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 
 import { makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./behavior-debug-board.mjs";
+import { startBoardSaveServer } from "./save-board-server.mjs";
 
-const renderProtocol = "1";
+const renderProtocol = "2";
 
 function ensure(condition, message) {
   if (!condition) throw new Error(message);
@@ -163,8 +164,15 @@ async function runFullInteractionQa(page, config, flow, checks) {
   await seekFlow(page, flow, rerenderStep);
   ensure(await titleInput.inputValue() === editedTitle, `${flow} card title edit was lost after playback rendered`);
   ensure(await descriptionInput.inputValue() === editedDescription, `${flow} card description edit was lost after playback rendered`);
+  await page.locator('[data-testid="board-save-status"][data-save-state="dirty"]').waitFor({ state: "visible" });
+  await page.locator('[data-testid="board-save-status"][data-save-state="saved"]').waitFor({ state: "visible", timeout: 3_000 });
+  checks["local-autosave"] = true;
   await titleInput.fill(originalTitle);
   await descriptionInput.fill(originalDescription);
+  await page.locator('[data-testid="board-save-status"][data-save-state="dirty"]').waitFor({ state: "visible" });
+  await page.locator('[data-testid="board-save-button"]').click();
+  await page.locator('[data-testid="board-save-status"][data-save-state="saved"]').waitFor({ state: "visible" });
+  checks["local-save"] = true;
   checks["card-text-editing"] = true;
 
   const draggable = page.locator(".react-flow__node-debugNode").first();
@@ -202,6 +210,10 @@ async function runFullInteractionQa(page, config, flow, checks) {
   checks["fit-view"] = true;
 
   await seekFlow(page, flow, totalSteps - 1);
+  if (await page.locator('[data-testid="board-save-status"][data-save-state="dirty"]').count()) {
+    await page.locator('[data-testid="board-save-button"]').click();
+    await page.locator('[data-testid="board-save-status"][data-save-state="saved"]').waitFor({ state: "visible" });
+  }
 }
 
 export async function runBoardQa(options) {
@@ -215,13 +227,20 @@ export async function runBoardQa(options) {
   const server = await startBoardServer(options);
   timings.server = millisecondsSince(serverStartedAt);
 
+  const screenshotPath = options.screenshotPath ?? resolve(options.repoRoot, "outputs/qa", prepared.configHash, "board.jpg");
+  const reportPath = options.reportPath ?? resolve(dirname(screenshotPath), "qa-report.json");
+  const qaSavePath = resolve(dirname(screenshotPath), "qa-board.local.json");
+  await mkdir(dirname(qaSavePath), { recursive: true });
+  await writeFile(qaSavePath, prepared.source, "utf8");
+  const saveToken = randomBytes(24).toString("hex");
+  const saveBridge = await startBoardSaveServer({ configPath: qaSavePath, token: saveToken });
   const url = makeBoardUrl(server.origin, prepared.configHash, {
     flow: options.flow,
     finalStep: options.finalStep,
+    saveOrigin: saveBridge.origin,
+    saveToken,
     timeScale: options.full ? 0.08 : 0.03,
   });
-  const screenshotPath = options.screenshotPath ?? resolve(options.repoRoot, "outputs/qa", prepared.configHash, "board.jpg");
-  const reportPath = options.reportPath ?? resolve(dirname(screenshotPath), "qa-report.json");
   const expected = {
     serviceNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.length, 0),
     edges: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
@@ -274,6 +293,8 @@ export async function runBoardQa(options) {
     checks.edges = true;
     checks.labels = true;
     checks.playback = true;
+    ensure(await page.locator('[data-testid="board-save-button"]').isEnabled(), "local save button is not connected");
+    checks["local-persistence"] = true;
 
     const labelTexts = await page.locator('[data-testid="edge-label"]').allTextContents();
     ensure(labelTexts.every((label) => label.trim().length > 0), "one or more directional edges rendered without a label");
@@ -380,6 +401,7 @@ export async function runBoardQa(options) {
     throw error;
   } finally {
     await browser?.close();
+    await saveBridge.close();
     if (!server.reused) await server.stop();
   }
 }

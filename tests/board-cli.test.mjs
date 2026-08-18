@@ -134,12 +134,23 @@ test("launch reuses an existing local Behavior Debug Board", async (context) => 
   let stderr = "";
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const status = await new Promise((resolvePromise, rejectPromise) => {
+  await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error(`BOARD_SERVER_READY timeout\n${stdout}\n${stderr}`)), 10_000);
+    const inspect = () => {
+      if (!stdout.includes("BOARD_SERVER_READY")) return;
+      clearTimeout(deadline);
+      resolvePromise();
+    };
+    child.stdout.on("data", inspect);
+    child.stderr.on("data", inspect);
     child.once("error", rejectPromise);
-    child.once("exit", resolvePromise);
   });
+  const exited = new Promise((resolvePromise) => child.once("exit", resolvePromise));
+  child.kill("SIGTERM");
+  const status = await exited;
 
-  assert.equal(status, 0, stderr);
+  assert.equal(status === 0 || status === null, true, stderr);
   assert.match(stdout, /BOARD_SERVER_REUSED/);
+  assert.match(stdout, /BOARD_SAVE_READY/);
   assert.match(stdout, /BOARD_OPENED pending-codex-browser/);
 });

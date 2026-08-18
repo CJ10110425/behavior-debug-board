@@ -1,7 +1,7 @@
 interface:
   display_name: "Behavior Debug Board"
-  short_description: "Turn debugging evidence into an animated before/after board"
-  default_prompt: "Use $behavior-debug-board to turn this bug into a local animated before/after behavior diagram."
+  short_description: "Create, save, and Git-version local behavior debug boards"
+  default_prompt: "Use $behavior-debug-board to save this bug as a local before/after board and ask whether I want Git version control."
 dependencies:
   tools:
     - type: "mcp"

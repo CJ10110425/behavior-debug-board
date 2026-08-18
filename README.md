@@ -22,10 +22,13 @@ npm run board
 
 1. 驗證 Board JSON。
 2. 啟動本地伺服器。
-3. 等待健康檢查通過。
-4. 打開 `http://localhost:3001/`。
+3. 啟動只接受 localhost 與 session token 的本地 Save Bridge。
+4. 等待健康檢查通過。
+5. 打開 `http://localhost:3001/`。
 
 每份輸入會先正規化並寫到 ignored 的 `public/runtime/<sha256>.json`；網址帶有相同 hash，舊 server 不會因 HMR 或上一份 config 顯示錯內容。
+
+畫布上的 Card 文字、位置、Before／After 標籤、播放 Card 位置、便條、形狀與自訂連線會在停止操作約一秒後自動保存，也可用右上角「儲存」或 `Cmd/Ctrl+S` 立即原子寫回來源 `board.json`。若檔案已被另一個 agent 修改，Save Bridge 會拒絕覆蓋並要求重新載入。
 
 只想開發 UI 時可執行：
 
@@ -34,6 +37,17 @@ npm run dev -- --port 3001
 ```
 
 ## 用自己的 debug 案例
+
+所有 Board 都應先存成本機 bundle。要和程式一起版控時，建議放在：
+
+```text
+.behavior-debug-board/boards/<slug>/
+├── board.json
+└── assets/
+    └── <brand>.svg
+```
+
+只存本機、不使用 Git 時，使用 `~/.behavior-debug-board/projects/<project-id>/boards/<slug>/`。Git 選項只代表本機 branch／commit；除非使用者另外要求，skill 不會 push 或建立 PR。
 
 依照 [Board schema](skills/behavior-debug-board/references/board-schema.md) 建立 JSON，接著執行：
 
@@ -74,7 +88,7 @@ ln -s "$PWD/skills/behavior-debug-board" "$HOME/.codex/skills/behavior-debug-boa
 Use $behavior-debug-board to turn this Firebase permission bug into a local before/after board.
 ```
 
-Skill 的完成條件包含「實際打開本地端 Board」。如果 agent 只回傳 JSON、Markdown 或靜態圖，工作尚未完成。
+Skill 啟動後會先詢問「Git 版控」或「只存本機」，並在收到選擇前停止。兩種模式都會保留完整本地 bundle。完成條件包含實際打開本地端 Board；如果 agent 只回傳 JSON、Markdown 或靜態圖，工作尚未完成。
 
 ## Logo 來源
 

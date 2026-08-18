@@ -10,7 +10,7 @@ const skillRoot = resolve(repoRoot, "skills/behavior-debug-board");
 
 test("skill package has the required contract, resources, resolver, and Logo MCP", async () => {
   const result = await validateSkill(skillRoot);
-  assert.equal(result.files, 11);
+  assert.equal(result.files, 13);
   assert.equal(result.categoryIcons, 17);
 });
 
@@ -31,6 +31,11 @@ test("LLM quality evals require behavior synthesis and an opened local board", a
 
   assert.ok(cases.length >= 3);
   for (const entry of cases) {
+    if (entry.name === "git-choice-gate") {
+      assert.ok(entry.expected.some((expectation) => /Git 版控.*只存本機.*取消/i.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /不會自動 push/i.test(expectation)));
+      continue;
+    }
     assert.ok(entry.expected.some((expectation) => /localhost|本地端 Board/i.test(expectation)));
     assert.ok(entry.expected.some((expectation) => /Before.*After|behavior/i.test(expectation)));
   }

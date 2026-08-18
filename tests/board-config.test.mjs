@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -32,13 +32,13 @@ test("accepts the bundled single-source fan-out behavior board", () => {
   assert.equal(validateBoardConfig(structuredClone(fanoutConfig)).title, fanoutConfig.title);
 });
 
-rejectsMutation("requires config version 1", (config) => { config.version = 2; }, /version must be 1/);
+rejectsMutation("requires a supported config version", (config) => { config.version = 3; }, /version must be 1 or 2/);
 rejectsMutation("requires exact Before and After flows", (config) => { config.flows[1].id = "during"; }, /unique ids: before and after/);
 rejectsMutation("requires matching outcomes", (config) => { config.flows[0].outcome = "success"; }, /outcome must be error/);
 rejectsMutation("limits a flow to five nodes", (config) => { config.flows[0].nodes = [config.flows[0].nodes[0]]; }, /2–5 service nodes/);
 rejectsMutation("rejects duplicate node ids", (config) => { config.flows[0].nodes[1].id = config.flows[0].nodes[0].id; }, /duplicate node id/);
 rejectsMutation("rejects invalid node kinds", (config) => { config.flows[0].nodes[0].kind = "screen"; }, /kind is invalid/);
-rejectsMutation("rejects remote and traversing logo paths", (config) => { config.flows[0].nodes[1].logo = "/logos/../secret.svg"; }, /local \/logos\/\*\.svg path/);
+rejectsMutation("rejects remote and traversing logo paths", (config) => { config.flows[0].nodes[1].logo = "/logos/../secret.svg"; }, /\/logos\/\*\.svg or a board-local assets\/\*\.svg path/);
 rejectsMutation("rejects unknown category icons", (config) => { config.flows[0].nodes[0].categoryIcon = "brand-ish"; }, /categoryIcon is invalid/);
 rejectsMutation("rejects ambiguous logo and category icon", (config) => { config.flows[0].nodes.find((node) => node.logo).categoryIcon = "security"; }, /either logo or categoryIcon/);
 rejectsMutation("rejects edges to unknown nodes", (config) => { config.flows[0].edges[0].target = "missing"; }, /unknown node/);
@@ -49,6 +49,27 @@ rejectsMutation("rejects duplicate active steps", (config) => { config.flows[1].
 rejectsMutation("rejects active steps outside the timeline", (config) => { config.flows[1].edges[0].activeSteps = [99]; }, /invalid active step/);
 rejectsMutation("requires a status for every node", (config) => { delete config.flows[0].steps[0].nodeStatuses[config.flows[0].nodes[0].id]; }, /missing or invalid/);
 rejectsMutation("rejects statuses for unknown nodes", (config) => { config.flows[0].steps[0].nodeStatuses.ghost = "idle"; }, /unknown node/);
+
+test("accepts version 2 persisted layout and canvas items", () => {
+  const config = cloneConfig();
+  config.version = 2;
+  config.flows[0].nodes[0].position = { x: 90, y: 78 };
+  config.flows[0].labelPosition = { x: 36, y: 18 };
+  config.flows[0].playbackPosition = { x: 140, y: 252 };
+  config.canvas = {
+    items: [{ id: "canvas-note-1", type: "note", position: { x: 40, y: 80 }, text: "本機註記" }],
+    edges: [{ id: "canvas-edge-1", source: "before-client", target: "canvas-note-1" }],
+  };
+  assert.equal(validateBoardConfig(config).version, 2);
+});
+
+rejectsMutation("requires version 2 for persisted canvas data", (config) => {
+  config.canvas = { items: [], edges: [] };
+}, /requires board config version 2/);
+
+rejectsMutation("rejects invalid persisted node positions", (config) => {
+  config.flows[0].nodes[0].position = { x: "left", y: 10 };
+}, /position must contain numeric x and y/);
 
 test("prepareBoard writes a validated app config", async (context) => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "behavior-debug-board-"));
@@ -73,4 +94,22 @@ test("runtime preparation writes immutable hash-addressed config outside the app
   assert.equal(result.runtimePath, join(temporaryRoot, "public", "runtime", `${result.configHash}.json`));
   assert.equal(written, result.source);
   assert.deepEqual(JSON.parse(written), defaultConfig);
+});
+
+test("runtime preparation copies board-local logo assets without changing canonical config", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "behavior-debug-assets-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const boardDirectory = join(temporaryRoot, "board");
+  const runtimeRoot = join(temporaryRoot, "renderer");
+  await mkdir(join(boardDirectory, "assets"), { recursive: true });
+  const config = cloneConfig();
+  config.flows[0].nodes[1].logo = "assets/acme.svg";
+  const configPath = join(boardDirectory, "board.json");
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await writeFile(join(boardDirectory, "assets", "acme.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n", "utf8");
+
+  const result = await prepareRuntimeBoard({ configPath, repoRoot: runtimeRoot });
+  const copied = await readFile(join(runtimeRoot, "public", "runtime", "assets", result.configHash, "acme.svg"), "utf8");
+  assert.match(copied, /<svg/);
+  assert.equal(JSON.parse(await readFile(result.runtimePath, "utf8")).flows[0].nodes[1].logo, "assets/acme.svg");
 });
