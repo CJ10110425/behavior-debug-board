@@ -1,0 +1,11 @@
+interface:
+  display_name: "Behavior Debug Board"
+  short_description: "Turn debugging evidence into an animated before/after board"
+  default_prompt: "Use $behavior-debug-board to turn this bug into a local animated before/after behavior diagram."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "thesvg"
+      description: "Search and fetch exact brand or service SVG logos"
+policy:
+  allow_implicit_invocation: true

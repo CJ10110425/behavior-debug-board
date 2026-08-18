@@ -1,0 +1,3 @@
+{"name":"firebase-rules-denied","input":"Client 讀取自己的 profile，但 Firebase Rules 拒絕。修正為登入者只能讀自己的 document，重新測試成功。","expected":["在同一張畫布合成 Before 與 After behavior","request 與 error/response 使用獨立方向線","開啟 localhost 本地端 Board"]}
+{"name":"api-timeout-retry","input":"Web app 呼叫 API timeout；加入 queue retry 後由 worker 寫入 DB 並回報成功。","expected":["把技術證據轉為使用者可理解的 Before / After","所有 edge 與 labels 在播放前顯示","開啟 localhost 本地端 Board"]}
+{"name":"logo-fallback","input":"將一個小眾 webhook 服務的驗證失敗與修正流程視覺化；Logo MCP 找不到它。","expected":["呈現 Before / After behavior 並標示原因","搜尋官方品牌頁與可信 registry，仍無可靠 logo 時使用 webhook categoryIcon 且不捏造品牌圖案","打開本地端 Board 並回報 localhost URL"]}

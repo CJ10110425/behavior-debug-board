@@ -1,0 +1,297 @@
+#!/usr/bin/env node
+
+import { spawn } from "node:child_process";
+import { constants } from "node:fs";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const skillRoot = resolve(scriptDirectory, "..");
+const defaultRepoRoot = resolve(skillRoot, "../..");
+const statuses = new Set(["idle", "running", "success", "error", "blocked"]);
+const semantics = new Set(["request", "query", "response", "error"]);
+const directions = new Set(["forward", "return"]);
+const nodeKinds = new Set(["client", "rules", "database", "service"]);
+const categoryIcons = new Set([
+  "web-app", "mobile-app", "api", "database", "auth", "storage", "compute", "payment", "analytics",
+  "messaging", "network", "security", "cloud", "queue", "webhook", "ai", "service",
+]);
+const boardHtmlMarker = "<title>Behavior Debug Board · Local</title>";
+
+function fail(message) {
+  throw new Error(message);
+}
+
+function requiredString(value, location) {
+  if (typeof value !== "string" || value.trim() === "") fail(`${location} must be a non-empty string`);
+}
+
+export function validateBoardConfig(config) {
+  if (!config || typeof config !== "object") fail("board config must be an object");
+  if (config.version !== 1) fail("board config version must be 1");
+  requiredString(config.title, "title");
+  if (!Array.isArray(config.flows) || config.flows.length !== 2) fail("flows must contain exactly Before and After");
+
+  const flowIds = config.flows.map((flow) => flow?.id);
+  if (new Set(flowIds).size !== 2 || !flowIds.includes("before") || !flowIds.includes("after")) {
+    fail("flows must have unique ids: before and after");
+  }
+
+  for (const flow of config.flows) {
+    if (!flow || typeof flow !== "object" || Array.isArray(flow)) fail("every flow must be an object");
+    const flowPath = `flows.${flow.id}`;
+    requiredString(flow.label, `${flowPath}.label`);
+    const expectedOutcome = flow.id === "before" ? "error" : "success";
+    if (flow.outcome !== expectedOutcome) fail(`${flowPath}.outcome must be ${expectedOutcome}`);
+    if (!flow.position || !Number.isFinite(flow.position.x) || !Number.isFinite(flow.position.y)) {
+      fail(`${flowPath}.position must contain numeric x and y`);
+    }
+    if (!Array.isArray(flow.nodes) || flow.nodes.length < 2 || flow.nodes.length > 5) {
+      fail(`${flowPath}.nodes must contain 2–5 service nodes`);
+    }
+    if (!Array.isArray(flow.steps) || flow.steps.length < 2) fail(`${flowPath}.steps must contain at least 2 steps`);
+    if (!Array.isArray(flow.edges) || flow.edges.length < 1) fail(`${flowPath}.edges must contain at least 1 edge`);
+
+    const nodeIds = new Set();
+    for (const node of flow.nodes) {
+      requiredString(node.id, `${flowPath}.nodes[].id`);
+      requiredString(node.title, `${flowPath}.nodes.${node.id}.title`);
+      requiredString(node.subtitle, `${flowPath}.nodes.${node.id}.subtitle`);
+      requiredString(node.detail, `${flowPath}.nodes.${node.id}.detail`);
+      if (nodeIds.has(node.id)) fail(`${flowPath} has duplicate node id: ${node.id}`);
+      nodeIds.add(node.id);
+      if (!nodeKinds.has(node.kind)) fail(`${flowPath}.nodes.${node.id}.kind is invalid`);
+      if (node.changed !== undefined && typeof node.changed !== "boolean") fail(`${flowPath}.nodes.${node.id}.changed must be boolean`);
+      if (node.logo !== undefined && (typeof node.logo !== "string" || !/^\/logos\/[a-z0-9][a-z0-9._-]*\.svg$/i.test(node.logo))) {
+        fail(`${flowPath}.nodes.${node.id}.logo must be a local /logos/*.svg path`);
+      }
+      if (node.categoryIcon !== undefined && !categoryIcons.has(node.categoryIcon)) {
+        fail(`${flowPath}.nodes.${node.id}.categoryIcon is invalid`);
+      }
+      if (node.logo && node.categoryIcon) fail(`${flowPath}.nodes.${node.id} must use either logo or categoryIcon, not both`);
+    }
+
+    const edgeIds = new Set();
+    const edgeRoutes = new Set();
+    for (const edge of flow.edges) {
+      requiredString(edge.id, `${flowPath}.edges[].id`);
+      requiredString(edge.label, `${flowPath}.edges.${edge.id}.label`);
+      if (edgeIds.has(edge.id)) fail(`${flowPath} has duplicate edge id: ${edge.id}`);
+      edgeIds.add(edge.id);
+      if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) fail(`${flowPath}.edges.${edge.id} references an unknown node`);
+      if (edge.source === edge.target) fail(`${flowPath}.edges.${edge.id} cannot connect a node to itself`);
+      if (!directions.has(edge.direction)) fail(`${flowPath}.edges.${edge.id}.direction must be forward or return`);
+      if (!semantics.has(edge.semantic)) fail(`${flowPath}.edges.${edge.id}.semantic is invalid`);
+      if (["request", "query"].includes(edge.semantic) && edge.direction !== "forward") {
+        fail(`${flowPath}.edges.${edge.id} request/query traffic must use direction forward`);
+      }
+      if (["response", "error"].includes(edge.semantic) && edge.direction !== "return") {
+        fail(`${flowPath}.edges.${edge.id} response/error traffic must use direction return`);
+      }
+      if (edge.muted !== undefined && typeof edge.muted !== "boolean") fail(`${flowPath}.edges.${edge.id}.muted must be boolean`);
+      if (!Array.isArray(edge.activeSteps)) fail(`${flowPath}.edges.${edge.id}.activeSteps must be an array`);
+      if (new Set(edge.activeSteps).size !== edge.activeSteps.length) fail(`${flowPath}.edges.${edge.id}.activeSteps contains duplicates`);
+      for (const step of edge.activeSteps) {
+        if (!Number.isInteger(step) || step < 0 || step >= flow.steps.length) fail(`${flowPath}.edges.${edge.id} has an invalid active step`);
+      }
+      const route = `${edge.source}|${edge.target}|${edge.direction}`;
+      if (edgeRoutes.has(route)) fail(`${flowPath} has duplicate directional route: ${route}`);
+      edgeRoutes.add(route);
+    }
+
+    flow.steps.forEach((step, index) => {
+      const stepPath = `${flowPath}.steps.${index}`;
+      requiredString(step.title, `${stepPath}.title`);
+      requiredString(step.reason, `${stepPath}.reason`);
+      requiredString(step.note, `${stepPath}.note`);
+      if (!step.nodeStatuses || typeof step.nodeStatuses !== "object" || Array.isArray(step.nodeStatuses)) {
+        fail(`${stepPath}.nodeStatuses must be an object`);
+      }
+      for (const nodeId of nodeIds) {
+        if (!statuses.has(step.nodeStatuses[nodeId])) fail(`${stepPath}.nodeStatuses.${nodeId} is missing or invalid`);
+      }
+      for (const nodeId of Object.keys(step.nodeStatuses)) {
+        if (!nodeIds.has(nodeId)) fail(`${stepPath}.nodeStatuses contains unknown node: ${nodeId}`);
+      }
+    });
+  }
+
+  return config;
+}
+
+export async function readAndValidateConfig(configPath) {
+  const absolutePath = resolve(configPath);
+  const text = await readFile(absolutePath, "utf8");
+  let config;
+  try {
+    config = JSON.parse(text);
+  } catch (error) {
+    fail(`invalid JSON in ${absolutePath}: ${error.message}`);
+  }
+  return { config: validateBoardConfig(config), absolutePath };
+}
+
+export async function prepareBoard({ configPath, outputPath }) {
+  const { config, absolutePath } = await readAndValidateConfig(configPath);
+  const absoluteOutput = resolve(outputPath);
+  await mkdir(dirname(absoluteOutput), { recursive: true });
+  await writeFile(absoluteOutput, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return { config, configPath: absolutePath, outputPath: absoluteOutput };
+}
+
+async function waitForBoard(url, timeoutMs = 60_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return;
+    } catch {
+      // The dev server is still starting.
+    }
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+  }
+  fail(`local board did not become healthy within ${timeoutMs / 1000}s: ${url}`);
+}
+
+async function inspectExistingServer(url) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return { occupied: true, isBoard: false };
+    const html = await response.text();
+    return { occupied: true, isBoard: html.includes(boardHtmlMarker) };
+  } catch {
+    return { occupied: false, isBoard: false };
+  }
+}
+
+function openSystemBrowser(url) {
+  if (process.platform === "darwin") return spawn("open", [url], { stdio: "ignore", detached: true });
+  if (process.platform === "win32") return spawn("cmd", ["/c", "start", "", url], { stdio: "ignore", detached: true });
+  return spawn("xdg-open", [url], { stdio: "ignore", detached: true });
+}
+
+export async function launchBoard({ configPath, outputPath, repoRoot, port, shouldOpen }) {
+  const absoluteRepoRoot = resolve(repoRoot);
+  await access(resolve(absoluteRepoRoot, "package.json"), constants.R_OK);
+  const prepared = await prepareBoard({ configPath, outputPath });
+  const url = `http://localhost:${port}/`;
+  console.log(`BOARD_URL ${url}`);
+  console.log(`BOARD_CONFIG ${prepared.outputPath}`);
+
+  const existing = await inspectExistingServer(url);
+  if (existing.isBoard) {
+    console.log(`BOARD_READY ${url} (reused existing local board)`);
+    if (shouldOpen) {
+      const opener = openSystemBrowser(url);
+      opener.unref();
+      console.log("BOARD_OPENED system-browser");
+    } else {
+      console.log("BOARD_OPENED pending-codex-browser");
+    }
+    return { code: 0, signal: null, url, reused: true };
+  }
+  if (existing.occupied) fail(`port ${port} is already serving another app; choose a different --port`);
+
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  const child = spawn(npmCommand, ["run", "dev", "--", "--port", String(port)], {
+    cwd: absoluteRepoRoot,
+    env: process.env,
+    stdio: "inherit",
+    detached: process.platform !== "win32",
+  });
+
+  const stop = () => {
+    if (child.exitCode !== null) return;
+    try {
+      if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
+      else child.kill("SIGTERM");
+    } catch {
+      child.kill("SIGTERM");
+    }
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+
+  let becameHealthy = false;
+  const childCompletion = new Promise((resolvePromise, rejectPromise) => {
+    child.once("error", rejectPromise);
+    child.once("exit", (code, signal) => {
+      if (!becameHealthy) rejectPromise(new Error(`board server exited before it became healthy (${signal ?? code})`));
+      else if (signal || code === 0) resolvePromise({ code, signal, url });
+      else rejectPromise(new Error(`board server exited with code ${code}`));
+    });
+  });
+  await Promise.race([waitForBoard(url), childCompletion]);
+  becameHealthy = true;
+  console.log(`BOARD_READY ${url}`);
+  if (shouldOpen) {
+    const opener = openSystemBrowser(url);
+    opener.unref();
+    console.log("BOARD_OPENED system-browser");
+  } else {
+    console.log("BOARD_OPENED pending-codex-browser");
+  }
+
+  return childCompletion;
+}
+
+function parseCli(argv) {
+  const command = argv[0] && !argv[0].startsWith("--") ? argv[0] : "launch";
+  const args = command === "launch" && argv[0]?.startsWith("--") ? argv : argv.slice(1);
+  const options = {
+    command,
+    configPath: resolve(defaultRepoRoot, "app/board.generated.json"),
+    outputPath: resolve(defaultRepoRoot, "app/board.generated.json"),
+    repoRoot: defaultRepoRoot,
+    port: 3001,
+    shouldOpen: true,
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const flag = args[index];
+    if (flag === "--no-open") options.shouldOpen = false;
+    else if (["--config", "--output", "--repo-root", "--port"].includes(flag)) {
+      const value = args[index + 1];
+      if (!value) fail(`${flag} requires a value`);
+      index += 1;
+      if (flag === "--config") options.configPath = resolve(value);
+      if (flag === "--output") options.outputPath = resolve(value);
+      if (flag === "--repo-root") options.repoRoot = resolve(value);
+      if (flag === "--port") {
+        options.port = Number(value);
+        if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535) fail("--port must be an integer from 1024 to 65535");
+      }
+    } else if (flag === "--help") options.command = "help";
+    else fail(`unknown option: ${flag}`);
+  }
+  return options;
+}
+
+async function main() {
+  const options = parseCli(process.argv.slice(2));
+  if (options.command === "help") {
+    console.log("Usage: behavior-debug-board.mjs <validate|prepare|launch> [--config file] [--output file] [--port 3001] [--no-open]");
+    return;
+  }
+  if (!["validate", "prepare", "launch"].includes(options.command)) fail(`unknown command: ${options.command}`);
+
+  if (options.command === "validate") {
+    const { config, absolutePath } = await readAndValidateConfig(options.configPath);
+    console.log(`BOARD_VALID ${absolutePath} (${config.flows.length} flows)`);
+    return;
+  }
+  if (options.command === "prepare") {
+    const prepared = await prepareBoard(options);
+    console.log(`BOARD_PREPARED ${prepared.outputPath}`);
+    return;
+  }
+  await launchBoard(options);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(`BOARD_ERROR ${error.message}`);
+    process.exitCode = 1;
+  });
+}

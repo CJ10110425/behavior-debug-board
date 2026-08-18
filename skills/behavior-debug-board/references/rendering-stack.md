@@ -1,0 +1,12 @@
+# Rendering stack
+
+- Canvas and graph state: `@xyflow/react` (React Flow / XYFlow).
+- UI runtime: React 19 with Vinext and Vite.
+- Edge geometry: React Flow `getStraightPath`; forward and return traffic use separate handles and separate edge records.
+- Packet motion: native SVG `<animateMotion>` on a grouped halo and dot.
+- Loading state: CSS spinner inside the active service card.
+- Infinite board: React Flow pan/zoom, dotted `Background`, fit-view, draggable nodes, and movable parent groups.
+- UI icons: local Lucide SVG masks from `lucide-static`.
+- Brand assets: local raw SVG files resolved through theSVG MCP/registry, preserving official colors.
+
+This skill does not render `.tldr` JSON. Its visual language is tldraw-like, but the interactive implementation is React Flow because it needs live playback, independent directional tracks, node state, and browser-local controls.

@@ -1,0 +1,6 @@
+{"prompt":"把這個 Firebase permission denied bug 畫成 Before / After 給非工程師看。","should_route":true,"reason":"需要 behavior-level debug board"}
+{"prompt":"幫我開一個本地端 board，把目前 debug 的資訊放上去並播放。","should_route":true,"reason":"明確要求 localhost animated board"}
+{"prompt":"我要看這次 behavior change，不要 code diff，只要流程改了哪裡。","should_route":true,"reason":"behavior diff 是核心 trigger"}
+{"prompt":"把 request 和 response 畫成兩條不同方向的線，回傳動畫也要播。","should_route":true,"reason":"需要獨立方向 edge 與 replay"}
+{"prompt":"Review this pull request and identify race conditions.","should_route":false,"reason":"純 code review 不需要 debug board"}
+{"prompt":"幫我做一張靜態系統架構簡報。","should_route":false,"reason":"靜態簡報應使用 presentation/diagram 工具"}

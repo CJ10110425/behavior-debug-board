@@ -1,0 +1,22 @@
+name: Feature request
+description: 提議新的 debug behavior 或 Board 能力
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 要解決的使用者問題
+      description: 請先說明現在看不懂或做不到的 behavior。
+    validations:
+      required: true
+  - type: textarea
+    id: before_after
+    attributes:
+      label: 理想的 Before / After
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已考慮的替代方案

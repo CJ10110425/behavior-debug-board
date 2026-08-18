@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "title": "Firebase Rules 讀取問題",
+  "flows": [
+    {
+      "id": "before",
+      "label": "Before",
+      "outcome": "error",
+      "position": { "x": 150, "y": 55 },
+      "nodes": [
+        {
+          "id": "client",
+          "title": "Web Client",
+          "subtitle": "Profile 畫面",
+          "detail": "讀取自己的 Profile",
+          "kind": "client",
+          "categoryIcon": "web-app"
+        },
+        {
+          "id": "rules",
+          "title": "Firebase Rules",
+          "subtitle": "存取控制",
+          "detail": "拒絕這次讀取",
+          "kind": "rules",
+          "logo": "/logos/firebase.svg"
+        }
+      ],
+      "edges": [
+        {
+          "id": "client-rules",
+          "source": "client",
+          "target": "rules",
+          "direction": "forward",
+          "label": "讀取 Profile",
+          "semantic": "request",
+          "activeSteps": [1]
+        },
+        {
+          "id": "rules-client",
+          "source": "rules",
+          "target": "client",
+          "direction": "return",
+          "label": "拒絕存取",
+          "semantic": "error",
+          "activeSteps": [2]
+        }
+      ],
+      "steps": [
+        {
+          "title": "準備重現",
+          "reason": "使用者開啟 Profile",
+          "note": "建立相同條件。",
+          "nodeStatuses": { "client": "idle", "rules": "idle" }
+        },
+        {
+          "title": "送出請求",
+          "reason": "Client 要求讀取 Profile",
+          "note": "請求進入 Firebase Rules。",
+          "nodeStatuses": { "client": "running", "rules": "idle" }
+        },
+        {
+          "title": "拒絕請求",
+          "reason": "Rule 不允許這次讀取",
+          "note": "畫面沒有資料。",
+          "nodeStatuses": { "client": "error", "rules": "error" }
+        }
+      ]
+    },
+    {
+      "id": "after",
+      "label": "After",
+      "outcome": "success",
+      "position": { "x": 150, "y": 505 },
+      "nodes": [
+        {
+          "id": "client",
+          "title": "Web Client",
+          "subtitle": "Profile 畫面",
+          "detail": "讀取自己的 Profile",
+          "kind": "client",
+          "categoryIcon": "web-app"
+        },
+        {
+          "id": "rules",
+          "title": "Firebase Rules",
+          "subtitle": "存取控制",
+          "detail": "只允許本人讀取",
+          "kind": "rules",
+          "logo": "/logos/firebase.svg",
+          "changed": true
+        }
+      ],
+      "edges": [
+        {
+          "id": "client-rules",
+          "source": "client",
+          "target": "rules",
+          "direction": "forward",
+          "label": "讀取 Profile",
+          "semantic": "request",
+          "activeSteps": [1]
+        },
+        {
+          "id": "rules-client",
+          "source": "rules",
+          "target": "client",
+          "direction": "return",
+          "label": "允許存取",
+          "semantic": "response",
+          "activeSteps": [2]
+        }
+      ],
+      "steps": [
+        {
+          "title": "載入修正",
+          "reason": "Rule 改為只允許本人讀取",
+          "note": "其他使用者仍無法存取。",
+          "nodeStatuses": { "client": "idle", "rules": "idle" }
+        },
+        {
+          "title": "重新讀取",
+          "reason": "相同使用者再次開啟 Profile",
+          "note": "請求進入修正後的 Rule。",
+          "nodeStatuses": { "client": "running", "rules": "running" }
+        },
+        {
+          "title": "讀取成功",
+          "reason": "登入者與資料擁有者相同",
+          "note": "Profile 正常顯示。",
+          "nodeStatuses": { "client": "success", "rules": "success" }
+        }
+      ]
+    }
+  ]
+}

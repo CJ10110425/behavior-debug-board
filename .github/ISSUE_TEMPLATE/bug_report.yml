@@ -1,0 +1,36 @@
+name: Bug report
+description: 回報 Board、動畫、skill 或啟動流程的問題
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 實際 behavior
+      description: 請描述你看到的流程或畫面。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 預期 behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 重現步驟
+      placeholder: "1. 執行…\n2. 打開…\n3. 播放…"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 環境
+      placeholder: "macOS 15, Node 22.13, Chrome 140"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截圖、錄影或 logs
