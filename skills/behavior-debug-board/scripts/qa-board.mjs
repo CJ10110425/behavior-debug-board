@@ -5,7 +5,7 @@ import { basename, dirname, extname, resolve } from "node:path";
 import { makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./behavior-debug-board.mjs";
 import { startBoardSaveServer } from "./save-board-server.mjs";
 
-const renderProtocol = "2";
+const renderProtocol = "3";
 
 function ensure(condition, message) {
   if (!condition) throw new Error(message);
@@ -134,6 +134,15 @@ async function runFullInteractionQa(page, config, flow, checks) {
   const totalSteps = Number(await playback.getAttribute("data-total-steps"));
   ensure(Number.isInteger(totalSteps) && totalSteps >= 2, `${flow} playback step count is invalid`);
 
+  await page.locator('[data-testid="board-version-toggle"]').click();
+  const versionPanel = page.locator('[data-testid="board-version-panel"]');
+  await versionPanel.waitFor({ state: "visible" });
+  await versionPanel.getByLabel("版本說明").fill("QA 初始版本");
+  await page.locator('[data-testid="board-version-create"]').click();
+  await versionPanel.locator("article").first().waitFor({ state: "visible" });
+  await versionPanel.getByLabel("關閉版本紀錄").click();
+  checks["local-version-create"] = true;
+
   await seekFlow(page, flow, totalSteps - 1);
   await page.locator(`[data-testid="playback-replay-${flow}"]`).click();
   await page.waitForFunction(
@@ -214,6 +223,29 @@ async function runFullInteractionQa(page, config, flow, checks) {
     await page.locator('[data-testid="board-save-button"]').click();
     await page.locator('[data-testid="board-save-status"][data-save-state="saved"]').waitFor({ state: "visible" });
   }
+
+  const finalTitleInput = page.locator(`[data-testid="service-node"][data-flow="${flow}"]`).first().locator('[data-testid="service-title-input"]');
+  await finalTitleInput.fill(`${originalTitle} · semantic diff`);
+  await page.locator('[data-testid="board-save-status"][data-save-state="saved"]').waitFor({ state: "visible", timeout: 3_000 });
+  await page.locator('[data-testid="board-version-toggle"]').click();
+  await versionPanel.waitFor({ state: "visible" });
+  const firstVersion = versionPanel.locator("article").first();
+  await firstVersion.getByRole("button", { name: "比較" }).click();
+  await page.locator('[data-testid="board-version-diff"] .semantic-change--changed').first().waitFor({ state: "visible" });
+  checks["semantic-version-diff"] = true;
+  await firstVersion.getByRole("button", { name: "還原" }).click();
+  await page.locator('[data-testid="board-version-restore-confirm"]').click();
+  await page.waitForFunction(
+    ({ selectedFlow, expectedTitle }) => {
+      const input = document.querySelector(`[data-testid="service-node"][data-flow="${selectedFlow}"] [data-testid="service-title-input"]`);
+      return input instanceof HTMLInputElement && input.value === expectedTitle;
+    },
+    { selectedFlow: flow, expectedTitle: originalTitle },
+    { timeout: 3_000 },
+  );
+  const restoredTitle = await page.locator(`[data-testid="service-node"][data-flow="${flow}"]`).first().locator('[data-testid="service-title-input"]').inputValue();
+  ensure(restoredTitle === originalTitle, `restoring a Board version returned ${restoredTitle}; expected ${originalTitle}`);
+  checks["local-version-restore"] = true;
 }
 
 export async function runBoardQa(options) {
@@ -294,7 +326,11 @@ export async function runBoardQa(options) {
     checks.labels = true;
     checks.playback = true;
     ensure(await page.locator('[data-testid="board-save-button"]').isEnabled(), "local save button is not connected");
+    ensure(await page.locator('[data-testid="board-version-toggle"]').isEnabled(), "local version history is not connected");
+    await page.getByText("只存本機 · 不建立 Git commit", { exact: true }).waitFor({ state: "visible" });
     checks["local-persistence"] = true;
+    checks["local-version-history"] = true;
+    checks["storage-mode-label"] = true;
 
     const labelTexts = await page.locator('[data-testid="edge-label"]').allTextContents();
     ensure(labelTexts.every((label) => label.trim().length > 0), "one or more directional edges rendered without a label");

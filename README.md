@@ -30,6 +30,8 @@ npm run board
 
 畫布上的 Card 文字、位置、Before／After 標籤、播放 Card 位置、便條、形狀與自訂連線會在停止操作約一秒後自動保存，也可用右上角「儲存」或 `Cmd/Ctrl+S` 立即原子寫回來源 `board.json`。若檔案已被另一個 agent 修改，Save Bridge 會拒絕覆蓋並要求重新載入。
 
+右上角「版本」會打開獨立版本側欄。Board 版本和圖內的 Before／After 不同：Before／After 說明系統修正前後的行為；版本紀錄保存這張解釋圖本身的演進。版本比較會把差異整理成「新增、移除、修改、移動」，不顯示難讀的 JSON line diff。
+
 只想開發 UI 時可執行：
 
 ```bash
@@ -55,6 +57,15 @@ npm run dev -- --port 3001
 npm run board -- --config /absolute/path/to/board.json --port 3001
 ```
 
+選擇 Git 或本機版本儲存模式：
+
+```bash
+npm run board -- \
+  --config /absolute/path/to/board.json \
+  --storage git \
+  --port 3001
+```
+
 產生給 app 使用、但暫時不開啟 Board：
 
 ```bash
@@ -73,6 +84,32 @@ npm run board:qa -- \
 ```
 
 修改 renderer 時再加 `--full`，驗證重播、loading、拖曳、縮放與 Fit view。一般產生 board 使用 fast QA，保留正常播放速度給使用者；QA 只在測試頁面內加速。
+
+## 版本、比較與還原
+
+Auto-save 只更新目前的 `board.json`，不會每次拖拉都製造版本。版本必須由使用者在側欄明確建立，或透過 CLI 建立：
+
+```bash
+npm run board:version -- create \
+  --config /absolute/path/to/board.json \
+  --storage local \
+  --title "Firebase Rules 修正完成"
+```
+
+列出版本並與目前 Board 比較：
+
+```bash
+npm run board:version -- list --config /absolute/path/to/board.json --storage local
+npm run board:version -- diff --config /absolute/path/to/board.json --storage local --revision local:<revision-id>
+```
+
+還原會先檢查來源 hash；本機模式還會自動建立「還原前自動備份」：
+
+```bash
+npm run board:version -- restore --config /absolute/path/to/board.json --storage local --revision local:<revision-id>
+```
+
+Git 模式的命名版本是正常的本機 commit，而且只會包含 `.behavior-debug-board/boards/<slug>/`。其他 staged／unstaged 檔案會保留；Push 和 PR 仍需要另一個明確指令。
 
 ## 安裝成 Codex skill
 

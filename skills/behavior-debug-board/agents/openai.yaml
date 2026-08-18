@@ -1,7 +1,7 @@
 interface:
   display_name: "Behavior Debug Board"
-  short_description: "Create, save, and Git-version local behavior debug boards"
-  default_prompt: "Use $behavior-debug-board to save this bug as a local before/after board and ask whether I want Git version control."
+  short_description: "Create, diff, restore, and Git-version local behavior boards"
+  default_prompt: "Use $behavior-debug-board to save this bug locally, ask about Git, and preserve semantic version history I can compare or restore."
 dependencies:
   tools:
     - type: "mcp"

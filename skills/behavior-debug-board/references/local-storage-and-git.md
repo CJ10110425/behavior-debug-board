@@ -31,6 +31,7 @@ Store a self-contained bundle under the current Git root:
 - Save and QA before committing.
 - Stage only the bundle and any intentionally changed documentation. Never use `git add -A`.
 - Commit a coherent board revision, for example `board(firebase-rules): explain successful access path`.
+- A named version created from the Board UI or version CLI is this same local commit; do not maintain duplicate snapshot files in Git mode.
 - Do not push or open a PR unless the user explicitly requests it.
 - Preserve unrelated dirty files.
 
@@ -43,7 +44,8 @@ Store the same bundle outside Git:
 ```text
 ~/.behavior-debug-board/projects/<project-id>/boards/<slug>/
 ├── board.json
-└── assets/
+├── assets/
+└── .versions/
 ```
 
 Derive `<project-id>` from the project path plus a short hash so projects with the same folder name do not collide. Report the absolute path. Do not use a temporary directory.
@@ -67,3 +69,4 @@ Do not persist transient renderer state:
 
 The local Save Bridge binds to `127.0.0.1`, requires a random session token, validates the full document, uses a base hash to reject stale writes, and atomically replaces only the resolved source `board.json`.
 The board auto-saves after one second of inactivity; the Save button and `Cmd/Ctrl+S` force an immediate save.
+Auto-save updates only `board.json`; it never creates a named version. The user explicitly creates versions from the version panel or version CLI. Read [version-history.md](version-history.md) before comparing or restoring.

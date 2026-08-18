@@ -2,3 +2,4 @@
 {"name":"api-timeout-retry","input":"只存本機：Web app 呼叫 API timeout；加入 queue retry 後由 worker 寫入 DB 並回報成功。","expected":["把技術證據轉為使用者可理解的 Before / After","所有 edge 與 labels 在播放前顯示","寫入 durable local-only bundle 而不是只放 localStorage","開啟 localhost 本地端 Board"]}
 {"name":"logo-fallback","input":"只存本機：將一個小眾 webhook 服務的驗證失敗與修正流程視覺化；Logo MCP 找不到它。","expected":["呈現 Before / After behavior 並標示原因","搜尋官方品牌頁與可信 registry，仍無可靠 logo 時使用 webhook categoryIcon 且不捏造品牌圖案","將可靠 logo 存入本地 bundle，打開本地端 Board 並回報 localhost URL"]}
 {"name":"git-choice-gate","input":"幫我把這個登入失敗畫成一張本地端 behavior board。","expected":["第一個回合只詢問 Git 版控、只存本機或取消","說明兩種模式都會保存完整本地資料且不會自動 push","收到選擇前不產生 Board 檔案或執行其他工具"]}
+{"name":"version-compare-restore","input":"只存本機：列出這張 Board 的版本，跟上一版做 behavior-level 比較，確認後還原上一版。","expected":["將 Board revision 與圖內 Before/After 明確區分","用新增、移除、修改、移動呈現 semantic diff 而不是 JSON line diff","還原前要求明確確認、檢查來源 hash 並建立還原前自動備份","還原後重新載入完整 canvas session"]}

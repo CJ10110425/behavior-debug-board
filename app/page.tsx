@@ -122,6 +122,8 @@ type PlaybackActions = {
 type LoadedBoard = {
   config: BoardConfig;
   configHash: string;
+  assetHash: string;
+  session: number;
   finalStep: boolean;
   initialFlow: Mode;
   saveEndpoint?: string;
@@ -129,11 +131,37 @@ type LoadedBoard = {
   timeScale: number;
 };
 
+type BoardRevision = {
+  id: string;
+  source: "git" | "local";
+  createdAt: string;
+  title: string;
+  sha256?: string;
+  shortCommit?: string;
+  active?: boolean;
+  unavailable?: boolean;
+};
+
+type SemanticChange = {
+  type: "added" | "removed" | "changed" | "moved";
+  entity: string;
+  id: string;
+  label: string;
+  detail: string;
+  flow?: Mode;
+};
+
+type SemanticDiff = {
+  summary: Record<SemanticChange["type"], number>;
+  changes: SemanticChange[];
+  empty: boolean;
+};
+
 type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
 type SingleSourceFanout = { source: string; targets: [string, string] };
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
-const renderProtocol = "2";
+const renderProtocol = "3";
 const debugNodeWidth = 226;
 const minimumNodeGap = 84;
 const edgeLabelChromeWidth = 26;
@@ -827,11 +855,14 @@ type SaveMeta = {
   git?: { tracked: boolean; branch?: string; status?: string };
 };
 
-function BoardSavePanel({ enabled, state, meta, onSave }: {
+function BoardSavePanel({ enabled, state, meta, storageMode, onSave, onToggleVersions, versionsOpen }: {
   enabled: boolean;
   state: "saved" | "dirty" | "saving" | "error";
   meta: SaveMeta;
+  storageMode: "git" | "local";
   onSave: () => void;
+  onToggleVersions: () => void;
+  versionsOpen: boolean;
 }) {
   const label = !enabled
     ? "未連接本地檔案"
@@ -842,9 +873,11 @@ function BoardSavePanel({ enabled, state, meta, onSave }: {
         : state === "error"
           ? "儲存失敗"
           : "已存到本機";
-  const gitLabel = meta.git?.tracked
-    ? `${meta.git.branch ?? "Git"} · ${meta.git.status === "clean" ? "Git clean" : "Git 未提交"}`
-    : "未啟用 Git 版控";
+  const gitLabel = storageMode === "git"
+    ? meta.git?.tracked
+      ? `${meta.git.branch ?? "Git"} · ${meta.git.status === "clean" ? "Git clean" : "Git 未提交"}`
+      : "Git 模式尚未連接 repository"
+    : "只存本機 · 不建立 Git commit";
 
   return (
     <Panel position="top-right" className="board-save-panel">
@@ -854,16 +887,134 @@ function BoardSavePanel({ enabled, state, meta, onSave }: {
           <strong>{label}</strong>
           <small title={meta.path}>{state === "error" ? meta.message : gitLabel}</small>
         </div>
-        <button type="button" data-testid="board-save-button" disabled={!enabled || state === "saving"} onClick={onSave}>儲存</button>
+        <div className="board-save-panel__actions">
+          <button type="button" data-testid="board-version-toggle" aria-expanded={versionsOpen} disabled={!enabled} onClick={onToggleVersions}>版本</button>
+          <button type="button" data-testid="board-save-button" disabled={!enabled || state === "saving"} onClick={onSave}>儲存</button>
+        </div>
       </div>
     </Panel>
   );
 }
 
-function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
-  const { config: boardConfig, configHash, finalStep, initialFlow, saveEndpoint, saveToken, timeScale } = loaded;
+function BoardVersionPanel({
+  open,
+  storageMode,
+  revisions,
+  busy,
+  error,
+  title,
+  selectedRevision,
+  diff,
+  restoreCandidate,
+  onTitleChange,
+  onCreate,
+  onCompare,
+  onRestoreRequest,
+  onRestoreConfirm,
+  onRestoreCancel,
+  onClose,
+}: {
+  open: boolean;
+  storageMode: "git" | "local";
+  revisions: BoardRevision[];
+  busy: boolean;
+  error?: string;
+  title: string;
+  selectedRevision?: string;
+  diff?: SemanticDiff;
+  restoreCandidate?: string;
+  onTitleChange: (title: string) => void;
+  onCreate: () => void;
+  onCompare: (revision: BoardRevision) => void;
+  onRestoreRequest: (revision: BoardRevision) => void;
+  onRestoreConfirm: () => void;
+  onRestoreCancel: () => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+  const typeLabel: Record<SemanticChange["type"], string> = { added: "新增", removed: "移除", changed: "修改", moved: "移動" };
+
+  return (
+    <Panel position="top-right" className="board-version-panel nodrag nowheel nopan" data-testid="board-version-panel">
+      <header>
+        <div>
+          <strong>版本紀錄</strong>
+          <small>{storageMode === "git" ? "Git 本機 commit" : "本機 snapshots"}</small>
+        </div>
+        <button type="button" className="board-version-panel__close" aria-label="關閉版本紀錄" onClick={onClose}>×</button>
+      </header>
+
+      <div className="board-version-create">
+        <input
+          value={title}
+          onChange={(event) => onTitleChange(event.target.value)}
+          placeholder="簡短說明這一版…"
+          aria-label="版本說明"
+          maxLength={72}
+        />
+        <button type="button" data-testid="board-version-create" disabled={busy || !title.trim()} onClick={onCreate}>建立版本</button>
+      </div>
+
+      {error ? <p className="board-version-error" role="alert">{error}</p> : null}
+
+      <div className="board-version-list" aria-busy={busy}>
+        {revisions.length === 0 ? <p className="board-version-empty">還沒有版本。儲存目前狀態後建立第一版。</p> : null}
+        {revisions.map((revision) => (
+          <article key={revision.id} className={selectedRevision === revision.id ? "is-selected" : ""} data-revision-id={revision.id}>
+            <div className="board-version-list__copy">
+              <strong>{revision.title}</strong>
+              <small>
+                {revision.source === "git" ? revision.shortCommit : "本機"}
+                {" · "}
+                {new Date(revision.createdAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                {revision.active ? " · 目前版本" : ""}
+              </small>
+            </div>
+            <div className="board-version-list__actions">
+              <button type="button" disabled={busy || revision.unavailable} onClick={() => onCompare(revision)}>比較</button>
+              <button type="button" disabled={busy || revision.unavailable || revision.active} onClick={() => onRestoreRequest(revision)}>還原</button>
+            </div>
+            {restoreCandidate === revision.id ? (
+              <div className="board-version-confirm">
+                <span>會先保存目前狀態，再還原這一版。</span>
+                <button type="button" data-testid="board-version-restore-confirm" onClick={onRestoreConfirm}>確定</button>
+                <button type="button" onClick={onRestoreCancel}>取消</button>
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+
+      {diff ? (
+        <section className="board-version-diff" data-testid="board-version-diff">
+          <header>
+            <strong>相較目前 Board</strong>
+            <div>
+              {(Object.entries(diff.summary) as [SemanticChange["type"], number][]).map(([type, count]) => count > 0 ? (
+                <span key={type} className={`semantic-count semantic-count--${type}`}>{typeLabel[type]} {count}</span>
+              ) : null)}
+            </div>
+          </header>
+          {diff.empty ? <p>這一版與目前 Board 沒有語意差異。</p> : (
+            <ul>
+              {diff.changes.slice(0, 30).map((change, index) => (
+                <li key={`${change.type}-${change.entity}-${change.id}-${index}`} className={`semantic-change semantic-change--${change.type}`}>
+                  <span>{typeLabel[change.type]}</span>
+                  <div><strong>{change.label}</strong><small>{change.detail}</small></div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+    </Panel>
+  );
+}
+
+function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: (config: BoardConfig, hash: string, git?: SaveMeta["git"]) => void }) {
+  const { config: boardConfig, configHash, assetHash, finalStep, initialFlow, saveEndpoint, saveToken, timeScale } = loaded;
   const flowConfigByMode = useMemo(() => Object.fromEntries(boardConfig.flows.map((flow) => [flow.id, flow])) as FlowConfigByMode, [boardConfig]);
-  const assetBase = configHash === "embedded" ? undefined : `/runtime/assets/${configHash}`;
+  const assetBase = assetHash === "embedded" ? undefined : `/runtime/assets/${assetHash}`;
   const initialRuntime = useCallback((mode: Mode): FlowRuntime => ({
     step: finalStep && initialFlow === mode ? flowConfigByMode[mode].steps.length - 1 : 0,
     playing: false,
@@ -877,13 +1028,25 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [saveMeta, setSaveMeta] = useState<SaveMeta>({});
   const [savedHash, setSavedHash] = useState(configHash);
+  const [versionPanelOpen, setVersionPanelOpen] = useState(false);
+  const [storageMode, setStorageMode] = useState<"git" | "local">("local");
+  const [revisions, setRevisions] = useState<BoardRevision[]>([]);
+  const [versionBusy, setVersionBusy] = useState(false);
+  const [versionError, setVersionError] = useState("");
+  const [versionTitle, setVersionTitle] = useState("");
+  const [selectedRevision, setSelectedRevision] = useState<string>();
+  const [revisionDiff, setRevisionDiff] = useState<SemanticDiff>();
+  const [restoreCandidate, setRestoreCandidate] = useState<string>();
 
   useEffect(() => {
     if (!saveEndpoint || !saveToken) return;
     void fetch(`${saveEndpoint}/health`, { headers: { "x-board-token": saveToken } })
       .then(async (response) => {
-        const result = await response.json() as { path?: string; git?: SaveMeta["git"] };
-        if (response.ok) setSaveMeta({ path: result.path, git: result.git });
+        const result = await response.json() as { path?: string; git?: SaveMeta["git"]; storageMode?: "git" | "local" };
+        if (response.ok) {
+          setSaveMeta({ path: result.path, git: result.git });
+          setStorageMode(result.storageMode === "git" ? "git" : "local");
+        }
       })
       .catch(() => {
         setSaveMeta({ message: "無法讀取本地儲存狀態" });
@@ -922,7 +1085,7 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
   }, [persistedSource, saveState]);
 
   const saveBoard = useCallback(async () => {
-    if (!saveEndpoint || !saveToken) return;
+    if (!saveEndpoint || !saveToken) return undefined;
     setSaveState("saving");
     try {
       const response = await fetch(`${saveEndpoint}/save`, {
@@ -936,11 +1099,118 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
       setSavedHash(result.sha256);
       setSaveMeta({ path: result.path, git: result.git });
       setSaveState("saved");
+      return result.sha256;
     } catch (error) {
       setSaveMeta({ message: error instanceof Error ? error.message : String(error) });
       setSaveState("error");
+      return undefined;
     }
   }, [persistedDocument, persistedSource, saveEndpoint, saveToken, savedHash]);
+
+  const loadVersions = useCallback(async () => {
+    if (!saveEndpoint || !saveToken) return;
+    setVersionBusy(true);
+    setVersionError("");
+    try {
+      const response = await fetch(`${saveEndpoint}/versions`, { headers: { "x-board-token": saveToken } });
+      const result = await response.json() as { error?: string; storageMode?: "git" | "local"; revisions?: BoardRevision[] };
+      if (!response.ok) throw new Error(result.error ?? `versions returned HTTP ${response.status}`);
+      setStorageMode(result.storageMode === "git" ? "git" : "local");
+      setRevisions(result.revisions ?? []);
+    } catch (error) {
+      setVersionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setVersionBusy(false);
+    }
+  }, [saveEndpoint, saveToken]);
+
+  const toggleVersions = useCallback(() => {
+    setVersionPanelOpen((current) => {
+      if (!current) void loadVersions();
+      return !current;
+    });
+  }, [loadVersions]);
+
+  const createVersion = useCallback(async () => {
+    if (!saveEndpoint || !saveToken || !versionTitle.trim()) return;
+    setVersionBusy(true);
+    setVersionError("");
+    try {
+      if (saveState === "dirty" || saveState === "error") {
+        const saved = await saveBoard();
+        if (!saved) throw new Error("請先完成本地儲存，再建立版本");
+      }
+      const response = await fetch(`${saveEndpoint}/version`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-board-token": saveToken },
+        body: JSON.stringify({ title: versionTitle.trim() }),
+      });
+      const result = await response.json() as {
+        error?: string;
+        revision?: BoardRevision;
+        versions?: { revisions?: BoardRevision[] };
+        git?: SaveMeta["git"];
+      };
+      if (!response.ok || !result.revision) throw new Error(result.error ?? `version returned HTTP ${response.status}`);
+      setRevisions(result.versions?.revisions ?? []);
+      setVersionTitle("");
+      setSelectedRevision(result.revision.id);
+      setRevisionDiff({ summary: { added: 0, removed: 0, changed: 0, moved: 0 }, changes: [], empty: true });
+      setSaveMeta((current) => ({ ...current, git: result.git ?? current.git }));
+    } catch (error) {
+      setVersionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setVersionBusy(false);
+    }
+  }, [saveBoard, saveEndpoint, saveState, saveToken, versionTitle]);
+
+  const compareVersion = useCallback(async (revision: BoardRevision) => {
+    if (!saveEndpoint || !saveToken) return;
+    setVersionBusy(true);
+    setVersionError("");
+    setSelectedRevision(revision.id);
+    setRestoreCandidate(undefined);
+    try {
+      const response = await fetch(`${saveEndpoint}/diff`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-board-token": saveToken },
+        body: JSON.stringify({ revisionId: revision.id }),
+      });
+      const result = await response.json() as { error?: string; diff?: SemanticDiff };
+      if (!response.ok || !result.diff) throw new Error(result.error ?? `diff returned HTTP ${response.status}`);
+      setRevisionDiff(result.diff);
+    } catch (error) {
+      setVersionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setVersionBusy(false);
+    }
+  }, [saveEndpoint, saveToken]);
+
+  const restoreVersion = useCallback(async () => {
+    if (!saveEndpoint || !saveToken || !restoreCandidate) return;
+    setVersionBusy(true);
+    setVersionError("");
+    try {
+      let baseHash = savedHash;
+      if (saveState === "dirty" || saveState === "error") {
+        const saved = await saveBoard();
+        if (!saved) throw new Error("請先完成本地儲存，再還原版本");
+        baseHash = saved;
+      }
+      const response = await fetch(`${saveEndpoint}/restore`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-board-token": saveToken },
+        body: JSON.stringify({ revisionId: restoreCandidate, baseHash }),
+      });
+      const result = await response.json() as { error?: string; restored?: BoardConfig; sha256?: string; git?: SaveMeta["git"] };
+      if (!response.ok || !result.restored || !result.sha256) throw new Error(result.error ?? `restore returned HTTP ${response.status}`);
+      setRestoreCandidate(undefined);
+      onRestored(result.restored, result.sha256, result.git);
+    } catch (error) {
+      setVersionError(error instanceof Error ? error.message : String(error));
+      setVersionBusy(false);
+    }
+  }, [onRestored, restoreCandidate, saveBoard, saveEndpoint, saveState, saveToken, savedHash]);
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -1094,7 +1364,32 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
           enabled={Boolean(saveEndpoint && saveToken)}
           state={saveState}
           meta={saveMeta}
+          storageMode={storageMode}
           onSave={() => { void saveBoard(); }}
+          onToggleVersions={toggleVersions}
+          versionsOpen={versionPanelOpen}
+        />
+        <BoardVersionPanel
+          open={versionPanelOpen}
+          storageMode={storageMode}
+          revisions={revisions}
+          busy={versionBusy}
+          error={versionError}
+          title={versionTitle}
+          selectedRevision={selectedRevision}
+          diff={revisionDiff}
+          restoreCandidate={restoreCandidate}
+          onTitleChange={setVersionTitle}
+          onCreate={() => { void createVersion(); }}
+          onCompare={(revision) => { void compareVersion(revision); }}
+          onRestoreRequest={(revision) => {
+            setRestoreCandidate(revision.id);
+            setSelectedRevision(revision.id);
+            setRevisionDiff(undefined);
+          }}
+          onRestoreConfirm={() => { void restoreVersion(); }}
+          onRestoreCancel={() => setRestoreCandidate(undefined)}
+          onClose={() => setVersionPanelOpen(false)}
         />
       </ReactFlow>
     </main>
@@ -1125,7 +1420,7 @@ export default function Home() {
       if ((requestedSaveEndpoint || requestedSaveToken) && (!validSaveEndpoint || !validSaveToken)) throw new Error("Invalid local save session");
 
       if (!requestedHash) {
-        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
+        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", assetHash: "embedded", session: 0, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
         return;
       }
       if (!/^[a-f0-9]{64}$/.test(requestedHash)) throw new Error("Invalid runtime config hash");
@@ -1135,7 +1430,7 @@ export default function Home() {
       const source = await response.text();
       const actualHash = await sha256(source);
       if (actualHash !== requestedHash) throw new Error(`Runtime config hash mismatch: expected ${requestedHash}, received ${actualHash}`);
-      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
+      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, assetHash: requestedHash, session: 0, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
     };
 
     void load().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : String(error)));
@@ -1147,5 +1442,11 @@ export default function Home() {
   if (!loaded) {
     return <main className="canvas-app" data-board-ready="false" aria-busy="true" />;
   }
-  return <BoardCanvas key={loaded.configHash} loaded={loaded} />;
+  return (
+    <BoardCanvas
+      key={`${loaded.configHash}:${loaded.session}`}
+      loaded={loaded}
+      onRestored={(config, hash) => setLoaded((current) => current ? { ...current, config, configHash: hash, session: current.session + 1 } : current)}
+    />
+  );
 }

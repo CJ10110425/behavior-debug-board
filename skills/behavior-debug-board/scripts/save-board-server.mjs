@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, relative, resolve } from "node:path";
@@ -9,16 +8,20 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { validateBoardConfig } from "./behavior-debug-board.mjs";
+import {
+  boardSha256,
+  canonicalBoardSource,
+  createBoardRevision,
+  diffBoardRevision,
+  listBoardRevisions,
+  restoreBoardRevision,
+} from "./board-version-store.mjs";
 
 const execFileAsync = promisify(execFile);
 const maximumBodyBytes = 5 * 1024 * 1024;
 
 function canonicalSource(config) {
-  return `${JSON.stringify(validateBoardConfig(structuredClone(config)), null, 2)}\n`;
-}
-
-function sha256(source) {
-  return createHash("sha256").update(source).digest("hex");
+  return canonicalBoardSource(validateBoardConfig(structuredClone(config)));
 }
 
 function localOrigin(origin) {
@@ -68,9 +71,10 @@ async function gitState(configPath) {
   }
 }
 
-export async function startBoardSaveServer({ configPath, token, port = 0 }) {
+export async function startBoardSaveServer({ configPath, token, port = 0, storageMode = "local" }) {
   const absoluteConfigPath = resolve(configPath);
   if (typeof token !== "string" || token.length < 32) throw new Error("save server requires a strong session token");
+  if (!["git", "local"].includes(storageMode)) throw new Error("storageMode must be git or local");
 
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin ?? "";
@@ -88,22 +92,60 @@ export async function startBoardSaveServer({ configPath, token, port = 0 }) {
         return sendJson(response, 200, {
           ready: true,
           path: absoluteConfigPath,
-          sha256: sha256(source),
+          sha256: boardSha256(source),
+          storageMode,
           git: await gitState(absoluteConfigPath),
         }, origin);
       } catch (error) {
         return sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) }, origin);
       }
     }
-    if (request.method !== "POST" || request.url !== "/save") {
+    if (request.method === "GET" && request.url === "/versions") {
+      try {
+        return sendJson(response, 200, await listBoardRevisions({ configPath: absoluteConfigPath, storageMode }), origin);
+      } catch (error) {
+        return sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) }, origin);
+      }
+    }
+
+    if (request.method !== "POST" || !["/save", "/version", "/diff", "/restore"].includes(request.url ?? "")) {
       return sendJson(response, 404, { error: "not found" }, origin);
     }
     if (!localOrigin(origin)) return sendJson(response, 403, { error: "save bridge only accepts localhost origins" }, origin);
 
     try {
       const payload = await readRequestJson(request);
+      if (request.url === "/version") {
+        const revision = await createBoardRevision({ configPath: absoluteConfigPath, storageMode, title: payload.title });
+        return sendJson(response, 200, {
+          revision,
+          versions: await listBoardRevisions({ configPath: absoluteConfigPath, storageMode }),
+          git: await gitState(absoluteConfigPath),
+        }, origin);
+      }
+      if (request.url === "/diff") {
+        return sendJson(response, 200, {
+          revisionId: payload.revisionId,
+          diff: await diffBoardRevision({ configPath: absoluteConfigPath, revisionId: payload.revisionId, storageMode }),
+        }, origin);
+      }
+      if (request.url === "/restore") {
+        const result = await restoreBoardRevision({
+          configPath: absoluteConfigPath,
+          revisionId: payload.revisionId,
+          storageMode,
+          baseHash: payload.baseHash,
+        });
+        return sendJson(response, 200, {
+          ...result,
+          path: absoluteConfigPath,
+          git: await gitState(absoluteConfigPath),
+          versions: await listBoardRevisions({ configPath: absoluteConfigPath, storageMode }),
+        }, origin);
+      }
+
       const currentSource = canonicalSource(JSON.parse(await readFile(absoluteConfigPath, "utf8")));
-      const currentHash = sha256(currentSource);
+      const currentHash = boardSha256(currentSource);
       if (payload.baseHash !== currentHash) {
         return sendJson(response, 409, {
           error: "board file changed on disk; reload before saving",
@@ -112,7 +154,7 @@ export async function startBoardSaveServer({ configPath, token, port = 0 }) {
       }
 
       const nextSource = canonicalSource(payload.config);
-      const nextHash = sha256(nextSource);
+      const nextHash = boardSha256(nextSource);
       const temporaryPath = `${absoluteConfigPath}.tmp-${process.pid}-${Date.now()}`;
       try {
         await writeFile(temporaryPath, nextSource, { encoding: "utf8", mode: 0o600 });
@@ -150,8 +192,9 @@ async function main() {
   const configPath = process.env.BOARD_SAVE_CONFIG;
   const token = process.env.BOARD_SAVE_TOKEN;
   const port = Number(process.env.BOARD_SAVE_PORT ?? "0");
+  const storageMode = process.env.BOARD_STORAGE_MODE ?? "local";
   if (!configPath || !token) throw new Error("BOARD_SAVE_CONFIG and BOARD_SAVE_TOKEN are required");
-  const server = await startBoardSaveServer({ configPath, token, port });
+  const server = await startBoardSaveServer({ configPath, token, port, storageMode });
   console.log(`BOARD_SAVE_SERVER_READY ${server.origin}`);
   const parentPid = Number(process.env.BOARD_SAVE_PARENT_PID ?? "0");
   const parentWatch = parentPid > 0 ? setInterval(() => {

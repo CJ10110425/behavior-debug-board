@@ -8,6 +8,7 @@ import test from "node:test";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const launcher = resolve(repoRoot, "skills/behavior-debug-board/scripts/behavior-debug-board.mjs");
+const versionCli = resolve(repoRoot, "skills/behavior-debug-board/scripts/board-version.mjs");
 const configPath = resolve(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
 
 async function availablePort() {
@@ -35,6 +36,34 @@ test("CLI validates and prepares a board end to end", async (context) => {
   assert.equal(preparation.status, 0, preparation.stderr);
   assert.match(preparation.stdout, /BOARD_PREPARED/);
   assert.equal(JSON.parse(await readFile(outputPath, "utf8")).version, 1);
+});
+
+test("version CLI creates, compares, lists, and restores a local Board revision", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "behavior-board-version-cli-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const boardPath = join(temporaryRoot, "board.json");
+  const original = JSON.parse(await readFile(configPath, "utf8"));
+  await writeFile(boardPath, `${JSON.stringify(original, null, 2)}\n`);
+
+  const creation = spawnSync(process.execPath, [versionCli, "create", "--config", boardPath, "--storage", "local", "--title", "初始版本"], { cwd: repoRoot, encoding: "utf8" });
+  assert.equal(creation.status, 0, creation.stderr);
+  const revisionId = creation.stdout.match(/BOARD_VERSION_CREATED (local:\S+)/)?.[1];
+  assert.ok(revisionId, creation.stdout);
+
+  const changed = structuredClone(original);
+  changed.title = "CLI 修改後";
+  await writeFile(boardPath, `${JSON.stringify(changed, null, 2)}\n`);
+  const comparison = spawnSync(process.execPath, [versionCli, "diff", "--config", boardPath, "--storage", "local", "--revision", revisionId], { cwd: repoRoot, encoding: "utf8" });
+  assert.equal(comparison.status, 0, comparison.stderr);
+  assert.equal(JSON.parse(comparison.stdout).summary.changed, 1);
+
+  const listing = spawnSync(process.execPath, [versionCli, "list", "--config", boardPath, "--storage", "local"], { cwd: repoRoot, encoding: "utf8" });
+  assert.equal(listing.status, 0, listing.stderr);
+  assert.equal(JSON.parse(listing.stdout).revisions.length, 1);
+
+  const restoration = spawnSync(process.execPath, [versionCli, "restore", "--config", boardPath, "--storage", "local", "--revision", revisionId], { cwd: repoRoot, encoding: "utf8" });
+  assert.equal(restoration.status, 0, restoration.stderr);
+  assert.equal(JSON.parse(await readFile(boardPath, "utf8")).title, original.title);
 });
 
 test("launch starts a healthy localhost board and reports that it should be opened", { timeout: 90_000 }, async (context) => {
@@ -145,12 +174,14 @@ test("launch reuses an existing local Behavior Debug Board", async (context) => 
     child.stderr.on("data", inspect);
     child.once("error", rejectPromise);
   });
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 350));
+  assert.equal(child.exitCode, null, "launcher exited and orphaned the Save Bridge while reusing the Board server");
   const exited = new Promise((resolvePromise) => child.once("exit", resolvePromise));
   child.kill("SIGTERM");
   const status = await exited;
 
   assert.equal(status === 0 || status === null, true, stderr);
   assert.match(stdout, /BOARD_SERVER_REUSED/);
-  assert.match(stdout, /BOARD_SAVE_READY/);
+  assert.match(stdout, /BOARD_SAVE_READY .*mode=local/);
   assert.match(stdout, /BOARD_OPENED pending-codex-browser/);
 });

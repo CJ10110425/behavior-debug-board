@@ -17,9 +17,12 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
     manifest: resolve(skillRoot, "agents/openai.yaml"),
     launcher: resolve(skillRoot, "scripts/behavior-debug-board.mjs"),
     saveServer: resolve(skillRoot, "scripts/save-board-server.mjs"),
+    versionCli: resolve(skillRoot, "scripts/board-version.mjs"),
+    versionStore: resolve(skillRoot, "scripts/board-version-store.mjs"),
     qa: resolve(skillRoot, "scripts/qa-board.mjs"),
     schema: resolve(skillRoot, "references/board-schema.md"),
     storage: resolve(skillRoot, "references/local-storage-and-git.md"),
+    versions: resolve(skillRoot, "references/version-history.md"),
     logoMcp: resolve(skillRoot, "references/logo-mcp.md"),
     rendering: resolve(skillRoot, "references/rendering-stack.md"),
     fanout: resolve(skillRoot, "assets/fanout-board.json"),
@@ -53,6 +56,8 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/--full/.test(skill), "skill must document full renderer regression QA");
   assert(/Git.*choice gate|Git\/local-only choice gate/.test(skill), "skill must require an upfront Git choice gate");
   assert(/Browser memory or `localStorage` is never the sole copy/.test(skill), "skill must require durable local persistence");
+  assert(/semantic|semantically/i.test(skill) && /restore/i.test(skill), "skill must document semantic version diff and restore");
+  assert(/version-history\.md/.test(skill), "skill must route version requests to the version-history reference");
   assert(/value: "thesvg"/.test(manifest), "agents/openai.yaml must declare the Logo MCP dependency");
   assert(/allow_implicit_invocation: true/.test(manifest), "skill must allow implicit routing");
   assert(/behavior-debug-board/.test(resolver) && /本地端動態 Board/.test(resolver), "resolver entry is missing");

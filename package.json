@@ -15,6 +15,7 @@
     "board:prepare": "node skills/behavior-debug-board/scripts/behavior-debug-board.mjs prepare",
     "board:qa": "node skills/behavior-debug-board/scripts/behavior-debug-board.mjs qa",
     "board:validate": "node skills/behavior-debug-board/scripts/behavior-debug-board.mjs validate",
+    "board:version": "node skills/behavior-debug-board/scripts/board-version.mjs",
     "skill:validate": "node scripts/validate-skill.mjs",
     "test": "node --test tests/*.test.mjs",
     "check": "npm run skill:validate && npm test && npm run build",

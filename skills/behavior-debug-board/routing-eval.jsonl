@@ -4,5 +4,7 @@
 {"prompt":"把 request 和 response 畫成兩條不同方向的線，回傳動畫也要播。","should_route":true,"reason":"需要獨立方向 edge 與 replay"}
 {"prompt":"把這張 behavior board 存到本機並用 Git 做版本控制。","should_route":true,"reason":"需要 durable local board 與 Git workflow"}
 {"prompt":"我剛剛移動了 debug card，幫我保存並 commit 這張圖。","should_route":true,"reason":"需要持久化 canvas layout 並版控"}
+{"prompt":"把這張 Board 跟上一版比較，告訴我流程、Card 和位置分別改了什麼。","should_route":true,"reason":"需要 Board semantic version diff"}
+{"prompt":"恢復 Firebase debug Board 的上一個本機版本。","should_route":true,"reason":"需要安全還原 Board revision"}
 {"prompt":"Review this pull request and identify race conditions.","should_route":false,"reason":"純 code review 不需要 debug board"}
 {"prompt":"幫我做一張靜態系統架構簡報。","should_route":false,"reason":"靜態簡報應使用 presentation/diagram 工具"}

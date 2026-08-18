@@ -1,6 +1,6 @@
 ---
 name: behavior-debug-board
-description: Create, persist, optionally Git-version, and open a local animated before/after debugging board with service cards, directional request/response lines, brand logos, loading states, and replay controls. Use for visualizing bugs, debug flows, behavior diffs, permission failures, request/response paths, local whiteboards, or requests to save, version, diff, commit, or restore a behavior board.
+description: Create, persist, semantically diff, restore, optionally Git-version, and open a local animated before/after debugging board with service cards, directional request/response lines, brand logos, loading states, replay controls, and revision history. Use for visualizing bugs, debug flows, behavior diffs, permission failures, request/response paths, local whiteboards, or requests to save, list versions, compare, commit, or restore a behavior board.
 ---
 
 # Behavior Debug Board
@@ -17,6 +17,8 @@ Guarantee all of the following:
 - Keep every service card title and description directly editable on the canvas, and preserve edits while playback changes card status.
 - Persist the full semantic board, canvas items, layout, and logo assets to an explicit local bundle. Browser memory or `localStorage` is never the sole copy.
 - Ask whether to use Git before creating files unless the user already chose. Git mode includes safe local branch/commit work but never implies push or PR permission.
+- Keep Board revision history separate from the `Before` / `After` behavior inside a debug story. Compare revisions semantically as added, removed, changed, or moved entities instead of exposing JSON line diffs.
+- Require explicit confirmation before restore, reject stale source hashes, create a safety snapshot in local-only mode, and reload the canvas session after a successful restore.
 - Reserve enough horizontal space for the longest directional label between adjacent cards; edge labels must never overlap service cards in the initial fitted layout.
 - Describe behavior, cause, and user-visible result. Do not expose commit hashes or code diffs unless requested.
 - Preserve official brand colors and store fetched SVGs locally for offline use.
@@ -43,15 +45,19 @@ Guarantee all of the following:
    ```
 
 7. Use `--full` when changing the renderer itself. Full QA additionally exercises local save, replay, loading, drag, zoom, fit-view, and detected fan-out layout.
-8. Launch the local board for the user. The launcher starts a token-protected localhost Save Bridge, so canvas edits and `Cmd+S` update the source `board.json`:
+8. Launch the local board for the user. Pass the selected storage mode. The launcher starts a token-protected localhost Save Bridge, so canvas edits and `Cmd+S` update the source `board.json`:
 
    ```bash
-   node skills/behavior-debug-board/scripts/behavior-debug-board.mjs launch --config /absolute/path/to/board.json --port auto
+   node skills/behavior-debug-board/scripts/behavior-debug-board.mjs launch \
+     --config /absolute/path/to/board.json \
+     --storage git \
+     --port auto
    ```
 
 9. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_SERVER_READY`, then open the printed hash-addressed `BOARD_URL` in that browser. Otherwise let the launcher open the system browser.
-10. In Git mode, re-run QA after the last save, inspect `git status` and the exact board diff, stage only the bundle, and create a coherent local commit. Do not push without a separate explicit request.
-11. Report the local source path, storage mode, Git branch/status when applicable, QA report, and screenshot. A screenshot captured before `data-board-ready="true"` is invalid.
+10. When the user asks to save a version, compare, list history, or restore, read [references/version-history.md](references/version-history.md) and use the bundled version script. A named Git version is a local commit of only the Board bundle; a named local-only version is an immutable `.versions/` snapshot.
+11. In Git mode, re-run QA before the final named version, inspect `git status` and the exact Board diff, and preserve unrelated staged or unstaged changes. Do not push without a separate explicit request.
+12. Report the local source path, storage mode, revision ID when created or restored, Git branch/status when applicable, QA report, and screenshot. A screenshot captured before `data-board-ready="true"` is invalid.
 
 ## Diagram Rules
 
@@ -69,11 +75,14 @@ Guarantee all of the following:
 - [references/logo-sources.md](references/logo-sources.md): bundled logo provenance and trademark notes.
 - [references/rendering-stack.md](references/rendering-stack.md): renderer, animation, and UI-icon implementation.
 - [references/local-storage-and-git.md](references/local-storage-and-git.md): mandatory local persistence, first-turn Git choice, safe branch/commit rules, and tracked bundle layout.
+- [references/version-history.md](references/version-history.md): named revisions, semantic diff categories, Git/local storage, CLI commands, and restore safety.
 - `assets/example-board.json`: smallest complete Before/After configuration to copy and edit.
 - `assets/fanout-board.json`: single-source/two-target regression fixture for curved branch layout.
 - `assets/logos/`: offline Firebase, Firestore, and Cloud Run fallbacks.
 - `scripts/behavior-debug-board.mjs`: validate, hash-prepare, launch, wait, and open the board.
 - `scripts/qa-board.mjs`: fast/full Playwright QA, structured report, and magic-byte-safe screenshot capture.
+- `scripts/board-version.mjs`: list, create, semantically diff, and restore Board revisions.
+- `scripts/board-version-store.mjs`: deterministic local/Git revision engine shared by the CLI and Save Bridge.
 
 ## Output Format
 
@@ -87,6 +96,7 @@ Opened: Codex browser | system browser
 Flows: Before <node/edge counts>; After <node/edge counts>
 Logos: <service → local SVG → source>
 QA: <fast|full> pass · <report path> · <screenshot path and MIME>
+Version: <created|compared|restored revision id and semantic summary, when requested>
 ```
 
 When blocked, state whether the failure is invalid config, missing runtime dependencies, unavailable Logo MCP/network, occupied port, or unhealthy local server.

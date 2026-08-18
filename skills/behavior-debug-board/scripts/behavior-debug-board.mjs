@@ -279,7 +279,7 @@ export function makeBoardUrl(origin, configHash, { flow, finalStep, timeScale, s
   return url.toString();
 }
 
-async function startSaveBridge(configPath) {
+async function startSaveBridge(configPath, storageMode) {
   const port = await availablePort();
   const token = randomBytes(24).toString("hex");
   const saveServerPath = resolve(scriptDirectory, "save-board-server.mjs");
@@ -291,8 +291,16 @@ async function startSaveBridge(configPath) {
       BOARD_SAVE_PARENT_PID: String(process.pid),
       BOARD_SAVE_PORT: String(port),
       BOARD_SAVE_TOKEN: token,
+      BOARD_STORAGE_MODE: storageMode,
     },
     stdio: "ignore",
+  });
+  const completion = new Promise((resolvePromise, rejectPromise) => {
+    child.once("error", rejectPromise);
+    child.once("exit", (code, signal) => {
+      if (signal || code === 0) resolvePromise({ code, signal });
+      else rejectPromise(new Error(`local save bridge exited with code ${code}`));
+    });
   });
   const origin = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 5_000;
@@ -303,6 +311,7 @@ async function startSaveBridge(configPath) {
         origin,
         token,
         pid: child.pid,
+        completion,
         stop: () => { if (child.exitCode === null) child.kill("SIGTERM"); },
       };
     } catch {
@@ -370,17 +379,17 @@ export async function startBoardServer({ repoRoot, port }) {
   return { origin, port: resolvedPort, reused: false, completion: childCompletion, stop };
 }
 
-export async function launchBoard({ configPath, outputPath, repoRoot, port, shouldOpen }) {
+export async function launchBoard({ configPath, outputPath, repoRoot, port, shouldOpen, storageMode = "local" }) {
   const startedAt = Date.now();
   const absoluteRepoRoot = resolve(repoRoot);
   const prepared = await prepareRuntimeBoard({ configPath, outputPath, repoRoot: absoluteRepoRoot });
   const server = await startBoardServer({ repoRoot: absoluteRepoRoot, port });
-  const saveBridge = await startSaveBridge(prepared.configPath);
+  const saveBridge = await startSaveBridge(prepared.configPath, storageMode);
   const url = makeBoardUrl(server.origin, prepared.configHash, { saveOrigin: saveBridge.origin, saveToken: saveBridge.token });
 
   console.log(`BOARD_CONFIG_LOADED sha256=${prepared.configHash} path=${prepared.runtimePath}`);
   console.log(`BOARD_LOCAL_SOURCE ${prepared.configPath}`);
-  console.log(`BOARD_SAVE_READY ${saveBridge.origin} pid=${saveBridge.pid}`);
+  console.log(`BOARD_SAVE_READY ${saveBridge.origin} mode=${storageMode} pid=${saveBridge.pid}`);
   console.log(`${server.reused ? "BOARD_SERVER_REUSED" : "BOARD_SERVER_STARTED"} ${server.origin}`);
   console.log(`BOARD_SERVER_READY ${server.origin}`);
   console.log(`BOARD_URL ${url}`);
@@ -394,7 +403,7 @@ export async function launchBoard({ configPath, outputPath, repoRoot, port, shou
   console.log(`BOARD_DURATION_MS ${Date.now() - startedAt}`);
   process.once("SIGINT", saveBridge.stop);
   process.once("SIGTERM", saveBridge.stop);
-  if (server.reused) return { code: 0, signal: null, url, reused: true };
+  if (server.reused) return saveBridge.completion;
   return server.completion;
 }
 
@@ -413,6 +422,7 @@ function parseCli(argv) {
     full: false,
     screenshotPath: undefined,
     reportPath: undefined,
+    storageMode: "local",
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -420,7 +430,7 @@ function parseCli(argv) {
     if (flag === "--no-open") options.shouldOpen = false;
     else if (flag === "--final-step") options.finalStep = true;
     else if (flag === "--full") options.full = true;
-    else if (["--config", "--output", "--repo-root", "--port", "--flow", "--screenshot", "--report"].includes(flag)) {
+    else if (["--config", "--output", "--repo-root", "--port", "--flow", "--screenshot", "--report", "--storage"].includes(flag)) {
       const value = args[index + 1];
       if (!value) fail(`${flag} requires a value`);
       index += 1;
@@ -437,6 +447,10 @@ function parseCli(argv) {
       }
       if (flag === "--screenshot") options.screenshotPath = resolve(value);
       if (flag === "--report") options.reportPath = resolve(value);
+      if (flag === "--storage") {
+        if (!["git", "local"].includes(value)) fail("--storage must be git or local");
+        options.storageMode = value;
+      }
     } else if (flag === "--help") options.command = "help";
     else fail(`unknown option: ${flag}`);
   }
@@ -446,7 +460,7 @@ function parseCli(argv) {
 async function main() {
   const options = parseCli(process.argv.slice(2));
   if (options.command === "help") {
-    console.log("Usage: behavior-debug-board.mjs <validate|prepare|launch|qa> [--config file] [--output file] [--port 3001|auto] [--no-open]");
+    console.log("Usage: behavior-debug-board.mjs <validate|prepare|launch|qa> [--config file] [--output file] [--port 3001|auto] [--storage git|local] [--no-open]");
     console.log("       behavior-debug-board.mjs qa [--flow before|after] [--final-step] [--full] [--screenshot file] [--report file]");
     return;
   }

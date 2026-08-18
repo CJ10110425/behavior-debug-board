@@ -72,4 +72,62 @@ test("local save bridge atomically persists a board and reports Git state", asyn
     body: JSON.stringify({ baseHash: sha256(canonical(original)), config: changed }),
   });
   assert.equal(conflict.status, 409);
+
+  const versionResponse = await fetch(`${server.origin}/version`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://localhost:3001",
+      "x-board-token": token,
+    },
+    body: JSON.stringify({ title: "Rules 修正完成" }),
+  });
+  const versionResult = await versionResponse.json();
+  assert.equal(versionResponse.status, 200, JSON.stringify(versionResult));
+  assert.match(versionResult.revision.id, /^local:/);
+
+  const versionsResponse = await fetch(`${server.origin}/versions`, { headers: { "x-board-token": token } });
+  const versions = await versionsResponse.json();
+  assert.equal(versions.storageMode, "local");
+  assert.equal(versions.revisions.length, 1);
+
+  const newer = structuredClone(changed);
+  newer.flows[1].nodes[0].title = "第二版標題";
+  const newerResponse = await fetch(`${server.origin}/save`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://localhost:3001",
+      "x-board-token": token,
+    },
+    body: JSON.stringify({ baseHash: result.sha256, config: newer }),
+  });
+  const newerResult = await newerResponse.json();
+  assert.equal(newerResponse.status, 200, JSON.stringify(newerResult));
+
+  const diffResponse = await fetch(`${server.origin}/diff`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://localhost:3001",
+      "x-board-token": token,
+    },
+    body: JSON.stringify({ revisionId: versionResult.revision.id }),
+  });
+  const diffResult = await diffResponse.json();
+  assert.equal(diffResponse.status, 200, JSON.stringify(diffResult));
+  assert.equal(diffResult.diff.summary.changed, 1);
+
+  const restoreResponse = await fetch(`${server.origin}/restore`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "http://localhost:3001",
+      "x-board-token": token,
+    },
+    body: JSON.stringify({ revisionId: versionResult.revision.id, baseHash: newerResult.sha256 }),
+  });
+  const restoreResult = await restoreResponse.json();
+  assert.equal(restoreResponse.status, 200, JSON.stringify(restoreResult));
+  assert.equal(restoreResult.restored.flows[1].nodes[0].title, "已儲存的新標題");
 });

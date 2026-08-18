@@ -10,7 +10,7 @@ const skillRoot = resolve(repoRoot, "skills/behavior-debug-board");
 
 test("skill package has the required contract, resources, resolver, and Logo MCP", async () => {
   const result = await validateSkill(skillRoot);
-  assert.equal(result.files, 13);
+  assert.equal(result.files, 16);
   assert.equal(result.categoryIcons, 17);
 });
 
@@ -23,6 +23,7 @@ test("routing eval covers real positive and negative user language", async () =>
   assert.ok(cases.some((entry) => /本地.*board/i.test(entry.prompt)));
   assert.ok(cases.some((entry) => /before.*after/i.test(entry.prompt)));
   assert.ok(cases.some((entry) => /回傳|response/i.test(entry.prompt)));
+  assert.ok(cases.some((entry) => /上一版|版本/.test(entry.prompt) && /比較|恢復/.test(entry.prompt)));
 });
 
 test("LLM quality evals require behavior synthesis and an opened local board", async () => {
@@ -34,6 +35,11 @@ test("LLM quality evals require behavior synthesis and an opened local board", a
     if (entry.name === "git-choice-gate") {
       assert.ok(entry.expected.some((expectation) => /Git 版控.*只存本機.*取消/i.test(expectation)));
       assert.ok(entry.expected.some((expectation) => /不會自動 push/i.test(expectation)));
+      continue;
+    }
+    if (entry.name === "version-compare-restore") {
+      assert.ok(entry.expected.some((expectation) => /新增.*移除.*修改.*移動/.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /自動備份/.test(expectation)));
       continue;
     }
     assert.ok(entry.expected.some((expectation) => /localhost|本地端 Board/i.test(expectation)));
