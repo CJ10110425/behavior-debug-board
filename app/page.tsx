@@ -239,7 +239,10 @@ function TextLabelCard({ data }: NodeProps<LabelNode>) {
   );
 }
 
-function DebugNodeCard({ data }: NodeProps<DebugNode>) {
+function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
+  const { updateNodeData } = useReactFlow<DebugNode, PacketEdge>();
+  const updateCopy = (field: "title" | "subtitle", value: string) => updateNodeData(id, { [field]: value });
+
   return (
     <div
       className={`debug-node debug-node--${data.kind} debug-node--${data.status}`}
@@ -260,8 +263,22 @@ function DebugNodeCard({ data }: NodeProps<DebugNode>) {
         </span>
       </div>
       <div className="debug-node__body">
-        <strong>{data.title}</strong>
-        <span>{data.subtitle}</span>
+        <input
+          className="debug-node__copy debug-node__copy--title nodrag nowheel nopan"
+          data-testid="service-title-input"
+          value={data.title}
+          aria-label={`${data.mode} ${data.nodeId} card title`}
+          onChange={(event) => updateCopy("title", event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+        />
+        <input
+          className="debug-node__copy debug-node__copy--description nodrag nowheel nopan"
+          data-testid="service-description-input"
+          value={data.subtitle}
+          aria-label={`${data.mode} ${data.nodeId} card description`}
+          onChange={(event) => updateCopy("subtitle", event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+        />
       </div>
       <div className="debug-node__detail">
         {data.changed ? <span className="changed-badge">修改位置</span> : null}
@@ -760,7 +777,8 @@ function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
     setNodes((current) => current.map((node) => {
       if (node.type === "debugNode") {
         const runtime = node.data.mode === "before" ? before : after;
-        return { ...node, data: debugData(flowConfigByMode, node.data.mode, node.data.nodeId, runtime) };
+        const runtimeData = debugData(flowConfigByMode, node.data.mode, node.data.nodeId, runtime);
+        return { ...node, data: { ...runtimeData, title: node.data.title, subtitle: node.data.subtitle } };
       }
       if (node.type === "playbackNode") {
         const runtime = node.data.mode === "before" ? before : after;

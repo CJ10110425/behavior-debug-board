@@ -8,6 +8,7 @@
 - Packet motion: native SVG `<animateMotion>` on a grouped halo and dot.
 - Loading state: CSS spinner inside the active service card.
 - Infinite board: React Flow pan/zoom, dotted `Background`, fit-view, draggable nodes, and movable parent groups.
+- Inline card editing: borderless controlled inputs update service-card titles and descriptions in React Flow node data; playback merges status changes without replacing edited copy.
 - UI icons: local Lucide SVG masks from `lucide-static`.
 - Brand assets: local raw SVG files resolved through theSVG MCP/registry, preserving official colors.
 - Runtime config: validated canonical JSON written to ignored `public/runtime/<sha256>.json`, then fetched from `?config=<sha256>` and verified again in the browser.

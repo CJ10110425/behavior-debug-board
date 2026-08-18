@@ -14,6 +14,7 @@ Guarantee all of the following:
 - Represent both `Before` and `After` on one infinite white canvas.
 - Give every direction its own edge. Never reuse one geometric line for request and response.
 - Render every edge, arrowhead, and label before playback starts. Playback only highlights an existing edge and moves its packet.
+- Keep every service card title and description directly editable on the canvas, and preserve edits while playback changes card status.
 - Reserve enough horizontal space for the longest directional label between adjacent cards; edge labels must never overlap service cards in the initial fitted layout.
 - Describe behavior, cause, and user-visible result. Do not expose commit hashes or code diffs unless requested.
 - Preserve official brand colors and store fetched SVGs locally for offline use.

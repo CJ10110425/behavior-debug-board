@@ -150,9 +150,27 @@ async function runFullInteractionQa(page, config, flow, checks) {
   }
   checks.loading = true;
 
+  const editableCard = page.locator(`[data-testid="service-node"][data-flow="${flow}"]`).first();
+  const titleInput = editableCard.locator('[data-testid="service-title-input"]');
+  const descriptionInput = editableCard.locator('[data-testid="service-description-input"]');
+  const originalTitle = await titleInput.inputValue();
+  const originalDescription = await descriptionInput.inputValue();
+  const editedTitle = `${originalTitle} · QA`;
+  const editedDescription = `${originalDescription} · edited`;
+  await titleInput.fill(editedTitle);
+  await descriptionInput.fill(editedDescription);
+  const rerenderStep = runningStep === 0 ? 1 : 0;
+  await seekFlow(page, flow, rerenderStep);
+  ensure(await titleInput.inputValue() === editedTitle, `${flow} card title edit was lost after playback rendered`);
+  ensure(await descriptionInput.inputValue() === editedDescription, `${flow} card description edit was lost after playback rendered`);
+  await titleInput.fill(originalTitle);
+  await descriptionInput.fill(originalDescription);
+  checks["card-text-editing"] = true;
+
   const draggable = page.locator(".react-flow__node-debugNode").first();
-  const box = await draggable.boundingBox();
-  ensure(box, "service node is not draggable because it has no bounding box");
+  const dragSurface = draggable.locator(".debug-node__topline");
+  const box = await dragSurface.boundingBox();
+  ensure(box, "service node drag surface has no bounding box");
   const beforeDrag = await draggable.evaluate((element) => getComputedStyle(element).transform);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
@@ -164,9 +182,9 @@ async function runFullInteractionQa(page, config, flow, checks) {
 
   const movedBox = await draggable.boundingBox();
   if (movedBox) {
-    await page.mouse.move(movedBox.x + movedBox.width / 2, movedBox.y + movedBox.height / 2);
+    await page.mouse.move(movedBox.x + movedBox.width / 2, movedBox.y + 18);
     await page.mouse.down();
-    await page.mouse.move(movedBox.x + movedBox.width / 2 - 32, movedBox.y + movedBox.height / 2 - 12, { steps: 6 });
+    await page.mouse.move(movedBox.x + movedBox.width / 2 - 32, movedBox.y + 6, { steps: 6 });
     await page.mouse.up();
   }
 
@@ -249,7 +267,10 @@ export async function runBoardQa(options) {
     ensure(actual.edges === expected.edges, `rendered ${actual.edges} edges; expected ${expected.edges}`);
     ensure(actual.labels === expected.labels, `rendered ${actual.labels} labels; expected ${expected.labels}`);
     ensure(actual.playbackCards === expected.playbackCards, `rendered ${actual.playbackCards} playback cards; expected ${expected.playbackCards}`);
+    ensure(await page.locator('[data-testid="service-title-input"]').count() === expected.serviceNodes, "not every service card has an editable title");
+    ensure(await page.locator('[data-testid="service-description-input"]').count() === expected.serviceNodes, "not every service card has an editable description");
     checks["service-nodes"] = true;
+    checks["editable-card-copy"] = true;
     checks.edges = true;
     checks.labels = true;
     checks.playback = true;
