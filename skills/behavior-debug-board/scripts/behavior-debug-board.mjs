@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -134,13 +136,35 @@ export async function readAndValidateConfig(configPath) {
 
 export async function prepareBoard({ configPath, outputPath }) {
   const { config, absolutePath } = await readAndValidateConfig(configPath);
+  const source = `${JSON.stringify(config, null, 2)}\n`;
+  const configHash = createHash("sha256").update(source).digest("hex");
   const absoluteOutput = resolve(outputPath);
   await mkdir(dirname(absoluteOutput), { recursive: true });
-  await writeFile(absoluteOutput, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-  return { config, configPath: absolutePath, outputPath: absoluteOutput };
+  await writeFile(absoluteOutput, source, "utf8");
+  return { config, configHash, configPath: absolutePath, outputPath: absoluteOutput, source };
 }
 
-async function waitForBoard(url, timeoutMs = 60_000) {
+export async function prepareRuntimeBoard({ configPath, repoRoot, outputPath }) {
+  const { config, absolutePath } = await readAndValidateConfig(configPath);
+  const source = `${JSON.stringify(config, null, 2)}\n`;
+  const configHash = createHash("sha256").update(source).digest("hex");
+  const runtimePath = resolve(repoRoot, "public/runtime", `${configHash}.json`);
+  await mkdir(dirname(runtimePath), { recursive: true });
+  await writeFile(runtimePath, source, "utf8");
+
+  let mirrorPath;
+  if (outputPath) {
+    mirrorPath = resolve(outputPath);
+    if (mirrorPath !== runtimePath) {
+      await mkdir(dirname(mirrorPath), { recursive: true });
+      await writeFile(mirrorPath, source, "utf8");
+    }
+  }
+
+  return { config, configHash, configPath: absolutePath, outputPath: mirrorPath, runtimePath, source };
+}
+
+async function waitForServer(url, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -151,7 +175,7 @@ async function waitForBoard(url, timeoutMs = 60_000) {
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
   }
-  fail(`local board did not become healthy within ${timeoutMs / 1000}s: ${url}`);
+  fail(`local board server did not become healthy within ${timeoutMs / 1000}s: ${url}`);
 }
 
 async function inspectExistingServer(url) {
@@ -171,37 +195,55 @@ function openSystemBrowser(url) {
   return spawn("xdg-open", [url], { stdio: "ignore", detached: true });
 }
 
-export async function launchBoard({ configPath, outputPath, repoRoot, port, shouldOpen }) {
+async function availablePort() {
+  const server = createServer();
+  await new Promise((resolvePromise, rejectPromise) => {
+    server.once("error", rejectPromise);
+    server.listen(0, "127.0.0.1", resolvePromise);
+  });
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  await new Promise((resolvePromise) => server.close(resolvePromise));
+  return port;
+}
+
+async function resolveServerPort(requestedPort) {
+  if (requestedPort !== "auto") return requestedPort;
+  const preferred = await inspectExistingServer("http://localhost:3001/");
+  if (preferred.isBoard || !preferred.occupied) return 3001;
+  return availablePort();
+}
+
+export function makeBoardUrl(origin, configHash, { flow, finalStep, timeScale } = {}) {
+  const url = new URL(origin);
+  url.searchParams.set("config", configHash);
+  if (flow) url.searchParams.set("flow", flow);
+  if (finalStep) url.searchParams.set("step", "final");
+  if (timeScale) url.searchParams.set("timeScale", String(timeScale));
+  return url.toString();
+}
+
+export async function startBoardServer({ repoRoot, port }) {
   const absoluteRepoRoot = resolve(repoRoot);
   await access(resolve(absoluteRepoRoot, "package.json"), constants.R_OK);
-  const prepared = await prepareBoard({ configPath, outputPath });
-  const url = `http://localhost:${port}/`;
-  console.log(`BOARD_URL ${url}`);
-  console.log(`BOARD_CONFIG ${prepared.outputPath}`);
+  const resolvedPort = await resolveServerPort(port);
+  const origin = `http://localhost:${resolvedPort}/`;
 
-  const existing = await inspectExistingServer(url);
+  const existing = await inspectExistingServer(origin);
   if (existing.isBoard) {
-    console.log(`BOARD_READY ${url} (reused existing local board)`);
-    if (shouldOpen) {
-      const opener = openSystemBrowser(url);
-      opener.unref();
-      console.log("BOARD_OPENED system-browser");
-    } else {
-      console.log("BOARD_OPENED pending-codex-browser");
-    }
-    return { code: 0, signal: null, url, reused: true };
+    return { origin, port: resolvedPort, reused: true, completion: Promise.resolve({ code: 0, signal: null }), stop: async () => {} };
   }
-  if (existing.occupied) fail(`port ${port} is already serving another app; choose a different --port`);
+  if (existing.occupied) fail(`port ${resolvedPort} is already serving another app; choose a different --port`);
 
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-  const child = spawn(npmCommand, ["run", "dev", "--", "--port", String(port)], {
+  const child = spawn(npmCommand, ["run", "dev", "--", "--port", String(resolvedPort)], {
     cwd: absoluteRepoRoot,
     env: process.env,
     stdio: "inherit",
     detached: process.platform !== "win32",
   });
 
-  const stop = () => {
+  const stopSignal = () => {
     if (child.exitCode !== null) return;
     try {
       if (process.platform !== "win32") process.kill(-child.pid, "SIGTERM");
@@ -210,21 +252,40 @@ export async function launchBoard({ configPath, outputPath, repoRoot, port, shou
       child.kill("SIGTERM");
     }
   };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+  const stop = async () => {
+    if (child.exitCode !== null) return;
+    const exited = new Promise((resolvePromise) => child.once("exit", resolvePromise));
+    stopSignal();
+    await Promise.race([exited, new Promise((resolvePromise) => setTimeout(resolvePromise, 5_000))]);
+  };
+  process.once("SIGINT", stopSignal);
+  process.once("SIGTERM", stopSignal);
 
   let becameHealthy = false;
   const childCompletion = new Promise((resolvePromise, rejectPromise) => {
     child.once("error", rejectPromise);
     child.once("exit", (code, signal) => {
       if (!becameHealthy) rejectPromise(new Error(`board server exited before it became healthy (${signal ?? code})`));
-      else if (signal || code === 0) resolvePromise({ code, signal, url });
+      else if (signal || code === 0) resolvePromise({ code, signal });
       else rejectPromise(new Error(`board server exited with code ${code}`));
     });
   });
-  await Promise.race([waitForBoard(url), childCompletion]);
+  await Promise.race([waitForServer(origin), childCompletion]);
   becameHealthy = true;
-  console.log(`BOARD_READY ${url}`);
+  return { origin, port: resolvedPort, reused: false, completion: childCompletion, stop };
+}
+
+export async function launchBoard({ configPath, outputPath, repoRoot, port, shouldOpen }) {
+  const startedAt = Date.now();
+  const absoluteRepoRoot = resolve(repoRoot);
+  const prepared = await prepareRuntimeBoard({ configPath, outputPath, repoRoot: absoluteRepoRoot });
+  const server = await startBoardServer({ repoRoot: absoluteRepoRoot, port });
+  const url = makeBoardUrl(server.origin, prepared.configHash);
+
+  console.log(`BOARD_CONFIG_LOADED sha256=${prepared.configHash} path=${prepared.runtimePath}`);
+  console.log(`${server.reused ? "BOARD_SERVER_REUSED" : "BOARD_SERVER_STARTED"} ${server.origin}`);
+  console.log(`BOARD_SERVER_READY ${server.origin}`);
+  console.log(`BOARD_URL ${url}`);
   if (shouldOpen) {
     const opener = openSystemBrowser(url);
     opener.unref();
@@ -232,8 +293,9 @@ export async function launchBoard({ configPath, outputPath, repoRoot, port, shou
   } else {
     console.log("BOARD_OPENED pending-codex-browser");
   }
-
-  return childCompletion;
+  console.log(`BOARD_DURATION_MS ${Date.now() - startedAt}`);
+  if (server.reused) return { code: 0, signal: null, url, reused: true };
+  return server.completion;
 }
 
 function parseCli(argv) {
@@ -241,17 +303,24 @@ function parseCli(argv) {
   const args = command === "launch" && argv[0]?.startsWith("--") ? argv : argv.slice(1);
   const options = {
     command,
-    configPath: resolve(defaultRepoRoot, "app/board.generated.json"),
-    outputPath: resolve(defaultRepoRoot, "app/board.generated.json"),
+    configPath: resolve(skillRoot, "assets/example-board.json"),
+    outputPath: undefined,
     repoRoot: defaultRepoRoot,
     port: 3001,
     shouldOpen: true,
+    flow: "after",
+    finalStep: false,
+    full: false,
+    screenshotPath: undefined,
+    reportPath: undefined,
   };
 
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
     if (flag === "--no-open") options.shouldOpen = false;
-    else if (["--config", "--output", "--repo-root", "--port"].includes(flag)) {
+    else if (flag === "--final-step") options.finalStep = true;
+    else if (flag === "--full") options.full = true;
+    else if (["--config", "--output", "--repo-root", "--port", "--flow", "--screenshot", "--report"].includes(flag)) {
       const value = args[index + 1];
       if (!value) fail(`${flag} requires a value`);
       index += 1;
@@ -259,9 +328,15 @@ function parseCli(argv) {
       if (flag === "--output") options.outputPath = resolve(value);
       if (flag === "--repo-root") options.repoRoot = resolve(value);
       if (flag === "--port") {
-        options.port = Number(value);
-        if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535) fail("--port must be an integer from 1024 to 65535");
+        options.port = value === "auto" ? "auto" : Number(value);
+        if (options.port !== "auto" && (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535)) fail("--port must be auto or an integer from 1024 to 65535");
       }
+      if (flag === "--flow") {
+        if (!["before", "after"].includes(value)) fail("--flow must be before or after");
+        options.flow = value;
+      }
+      if (flag === "--screenshot") options.screenshotPath = resolve(value);
+      if (flag === "--report") options.reportPath = resolve(value);
     } else if (flag === "--help") options.command = "help";
     else fail(`unknown option: ${flag}`);
   }
@@ -271,10 +346,11 @@ function parseCli(argv) {
 async function main() {
   const options = parseCli(process.argv.slice(2));
   if (options.command === "help") {
-    console.log("Usage: behavior-debug-board.mjs <validate|prepare|launch> [--config file] [--output file] [--port 3001] [--no-open]");
+    console.log("Usage: behavior-debug-board.mjs <validate|prepare|launch|qa> [--config file] [--output file] [--port 3001|auto] [--no-open]");
+    console.log("       behavior-debug-board.mjs qa [--flow before|after] [--final-step] [--full] [--screenshot file] [--report file]");
     return;
   }
-  if (!["validate", "prepare", "launch"].includes(options.command)) fail(`unknown command: ${options.command}`);
+  if (!["validate", "prepare", "launch", "qa"].includes(options.command)) fail(`unknown command: ${options.command}`);
 
   if (options.command === "validate") {
     const { config, absolutePath } = await readAndValidateConfig(options.configPath);
@@ -282,8 +358,16 @@ async function main() {
     return;
   }
   if (options.command === "prepare") {
-    const prepared = await prepareBoard(options);
-    console.log(`BOARD_PREPARED ${prepared.outputPath}`);
+    const prepared = options.outputPath
+      ? await prepareBoard({ configPath: options.configPath, outputPath: options.outputPath })
+      : await prepareRuntimeBoard(options);
+    console.log(`BOARD_PREPARED ${prepared.outputPath ?? prepared.runtimePath}`);
+    console.log(`BOARD_CONFIG_LOADED sha256=${prepared.configHash}`);
+    return;
+  }
+  if (options.command === "qa") {
+    const { runBoardQa } = await import("./qa-board.mjs");
+    await runBoardQa(options);
     return;
   }
   await launchBoard(options);

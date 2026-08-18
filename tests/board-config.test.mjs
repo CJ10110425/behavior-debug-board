@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { prepareBoard, validateBoardConfig } from "../skills/behavior-debug-board/scripts/behavior-debug-board.mjs";
+import { prepareBoard, prepareRuntimeBoard, validateBoardConfig } from "../skills/behavior-debug-board/scripts/behavior-debug-board.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const defaultConfigPath = resolve(repoRoot, "app/board.generated.json");
+const defaultConfigPath = resolve(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
 const defaultConfig = JSON.parse(await readFile(defaultConfigPath, "utf8"));
 
 function cloneConfig() {
@@ -30,18 +30,18 @@ rejectsMutation("requires config version 1", (config) => { config.version = 2; }
 rejectsMutation("requires exact Before and After flows", (config) => { config.flows[1].id = "during"; }, /unique ids: before and after/);
 rejectsMutation("requires matching outcomes", (config) => { config.flows[0].outcome = "success"; }, /outcome must be error/);
 rejectsMutation("limits a flow to five nodes", (config) => { config.flows[0].nodes = [config.flows[0].nodes[0]]; }, /2–5 service nodes/);
-rejectsMutation("rejects duplicate node ids", (config) => { config.flows[0].nodes[1].id = "client"; }, /duplicate node id/);
+rejectsMutation("rejects duplicate node ids", (config) => { config.flows[0].nodes[1].id = config.flows[0].nodes[0].id; }, /duplicate node id/);
 rejectsMutation("rejects invalid node kinds", (config) => { config.flows[0].nodes[0].kind = "screen"; }, /kind is invalid/);
 rejectsMutation("rejects remote and traversing logo paths", (config) => { config.flows[0].nodes[1].logo = "/logos/../secret.svg"; }, /local \/logos\/\*\.svg path/);
 rejectsMutation("rejects unknown category icons", (config) => { config.flows[0].nodes[0].categoryIcon = "brand-ish"; }, /categoryIcon is invalid/);
-rejectsMutation("rejects ambiguous logo and category icon", (config) => { config.flows[0].nodes[1].categoryIcon = "security"; }, /either logo or categoryIcon/);
+rejectsMutation("rejects ambiguous logo and category icon", (config) => { config.flows[0].nodes.find((node) => node.logo).categoryIcon = "security"; }, /either logo or categoryIcon/);
 rejectsMutation("rejects edges to unknown nodes", (config) => { config.flows[0].edges[0].target = "missing"; }, /unknown node/);
-rejectsMutation("rejects self links", (config) => { config.flows[0].edges[0].target = "client"; }, /cannot connect a node to itself/);
-rejectsMutation("enforces semantic direction", (config) => { config.flows[1].edges[2].direction = "forward"; }, /response\/error traffic must use direction return/);
+rejectsMutation("rejects self links", (config) => { config.flows[0].edges[0].target = config.flows[0].edges[0].source; }, /cannot connect a node to itself/);
+rejectsMutation("enforces semantic direction", (config) => { config.flows[1].edges.find((edge) => ["response", "error"].includes(edge.semantic)).direction = "forward"; }, /response\/error traffic must use direction return/);
 rejectsMutation("rejects duplicate directional routes", (config) => { config.flows[1].edges[1] = { ...config.flows[1].edges[0], id: "duplicate" }; }, /duplicate directional route/);
 rejectsMutation("rejects duplicate active steps", (config) => { config.flows[1].edges[0].activeSteps = [1, 1]; }, /activeSteps contains duplicates/);
 rejectsMutation("rejects active steps outside the timeline", (config) => { config.flows[1].edges[0].activeSteps = [99]; }, /invalid active step/);
-rejectsMutation("requires a status for every node", (config) => { delete config.flows[0].steps[0].nodeStatuses.rules; }, /missing or invalid/);
+rejectsMutation("requires a status for every node", (config) => { delete config.flows[0].steps[0].nodeStatuses[config.flows[0].nodes[0].id]; }, /missing or invalid/);
 rejectsMutation("rejects statuses for unknown nodes", (config) => { config.flows[0].steps[0].nodeStatuses.ghost = "idle"; }, /unknown node/);
 
 test("prepareBoard writes a validated app config", async (context) => {
@@ -53,5 +53,18 @@ test("prepareBoard writes a validated app config", async (context) => {
   const written = JSON.parse(await readFile(outputPath, "utf8"));
 
   assert.equal(result.outputPath, outputPath);
+  assert.match(result.configHash, /^[a-f0-9]{64}$/);
   assert.deepEqual(written, defaultConfig);
+});
+
+test("runtime preparation writes immutable hash-addressed config outside the app fixture", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "behavior-debug-runtime-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+
+  const result = await prepareRuntimeBoard({ configPath: defaultConfigPath, repoRoot: temporaryRoot });
+  const written = await readFile(result.runtimePath, "utf8");
+
+  assert.equal(result.runtimePath, join(temporaryRoot, "public", "runtime", `${result.configHash}.json`));
+  assert.equal(written, result.source);
+  assert.deepEqual(JSON.parse(written), defaultConfig);
 });

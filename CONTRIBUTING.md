@@ -27,6 +27,12 @@
    npm run check
    ```
 
+   若修改 renderer、互動或 layout，再執行真實瀏覽器回歸：
+
+   ```bash
+   npm run board:qa -- --port auto --flow after --final-step --full --screenshot outputs/pr-board.jpg
+   ```
+
 5. Commit 並 push 到自己的 fork：
 
    ```bash

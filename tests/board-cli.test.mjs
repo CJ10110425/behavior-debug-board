@@ -8,7 +8,7 @@ import test from "node:test";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const launcher = resolve(repoRoot, "skills/behavior-debug-board/scripts/behavior-debug-board.mjs");
-const configPath = resolve(repoRoot, "app/board.generated.json");
+const configPath = resolve(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
 
 async function availablePort() {
   const server = createServer();
@@ -52,7 +52,7 @@ const portIndex = process.argv.indexOf("--port");
 const port = Number(process.argv[portIndex + 1]);
 const server = createServer((_request, response) => {
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  response.end("<!doctype html><title>Behavior Debug Board fixture</title>");
+  response.end("<!doctype html><title>Behavior Debug Board · Local</title>");
 });
 server.listen(port);
 const stop = () => server.close(() => process.exit(0));
@@ -83,9 +83,9 @@ process.once("SIGTERM", stop);
   context.after(stop);
 
   await new Promise((resolvePromise, rejectPromise) => {
-    const deadline = setTimeout(() => rejectPromise(new Error(`BOARD_READY timeout\n${output}`)), 75_000);
+    const deadline = setTimeout(() => rejectPromise(new Error(`BOARD_SERVER_READY timeout\n${output}`)), 75_000);
     const inspect = () => {
-      if (output.includes("BOARD_READY")) {
+      if (output.includes("BOARD_SERVER_READY")) {
         clearTimeout(deadline);
         resolvePromise();
       }
@@ -94,7 +94,7 @@ process.once("SIGTERM", stop);
     child.stderr.on("data", inspect);
     inspect();
     child.once("exit", (code) => {
-      if (!output.includes("BOARD_READY")) {
+      if (!output.includes("BOARD_SERVER_READY")) {
         clearTimeout(deadline);
         rejectPromise(new Error(`launcher exited ${code}\n${output}`));
       }
@@ -103,8 +103,9 @@ process.once("SIGTERM", stop);
 
   const response = await fetch(`http://localhost:${port}/`);
   assert.equal(response.status, 200);
-  assert.match(output, new RegExp(`BOARD_URL http://localhost:${port}/`));
-  assert.match(output, new RegExp(`BOARD_CONFIG ${outputPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  assert.match(output, new RegExp(`BOARD_URL http://localhost:${port}/\\?config=[a-f0-9]{64}`));
+  assert.match(output, /BOARD_CONFIG_LOADED sha256=[a-f0-9]{64}/);
+  assert.equal(JSON.parse(await readFile(outputPath, "utf8")).version, 1);
   assert.match(output, /BOARD_OPENED pending-codex-browser/);
 });
 
@@ -139,6 +140,6 @@ test("launch reuses an existing local Behavior Debug Board", async (context) => 
   });
 
   assert.equal(status, 0, stderr);
-  assert.match(stdout, /reused existing local board/);
+  assert.match(stdout, /BOARD_SERVER_REUSED/);
   assert.match(stdout, /BOARD_OPENED pending-codex-browser/);
 });

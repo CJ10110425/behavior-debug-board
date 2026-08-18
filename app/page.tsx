@@ -116,8 +116,18 @@ type PlaybackActions = {
   onSeek: (step: number) => void;
 };
 
-const boardConfig = boardConfigJson as BoardConfig;
-const flowConfigByMode = Object.fromEntries(boardConfig.flows.map((flow) => [flow.id, flow])) as Record<Mode, BoardFlowConfig>;
+type LoadedBoard = {
+  config: BoardConfig;
+  configHash: string;
+  finalStep: boolean;
+  initialFlow: Mode;
+  timeScale: number;
+};
+
+type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
+
+const embeddedBoardConfig = boardConfigJson as BoardConfig;
+const renderProtocol = "1";
 
 const categoryIconPath: Record<BoardCategoryIcon, string> = {
   "web-app": "/icons/app-window.svg",
@@ -223,7 +233,13 @@ function TextLabelCard({ data }: NodeProps<LabelNode>) {
 
 function DebugNodeCard({ data }: NodeProps<DebugNode>) {
   return (
-    <div className={`debug-node debug-node--${data.kind} debug-node--${data.status}`}>
+    <div
+      className={`debug-node debug-node--${data.kind} debug-node--${data.status}`}
+      data-testid="service-node"
+      data-flow={data.mode}
+      data-node-id={data.nodeId}
+      data-status={data.status}
+    >
       <Handle id="forward-in" type="target" position={Position.Left} className="debug-handle" style={{ top: "42%" }} />
       <Handle id="return-out" type="source" position={Position.Left} className="debug-handle" style={{ top: "72%" }} />
       <div className="debug-node__topline">
@@ -253,7 +269,14 @@ function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
   const isBefore = data.mode === "before";
 
   return (
-    <section className={`playback-card playback-card--${data.mode}${data.finished ? " is-finished" : ""}`}>
+    <section
+      className={`playback-card playback-card--${data.mode}${data.finished ? " is-finished" : ""}`}
+      data-testid="playback-card"
+      data-flow={data.mode}
+      data-current-step={data.step}
+      data-total-steps={data.total}
+      data-playing={data.playing ? "true" : "false"}
+    >
       <span className="playback-drag-indicator"><SvgIcon name="grip" size={14} /></span>
       <div className="playback-summary">
         <span className={`outcome-icon${data.finished ? " is-finished" : ""}`}>
@@ -269,11 +292,11 @@ function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
       <div className="playback-control-area nodrag nowheel nopan">
         <div className="playback-controls">
           <div className="playback-buttons">
-            <button type="button" onClick={data.onToggle} aria-label={data.playing ? `暫停 ${data.mode}` : `播放 ${data.mode}`}>
+            <button type="button" data-testid={`playback-toggle-${data.mode}`} onClick={data.onToggle} aria-label={data.playing ? `暫停 ${data.mode}` : `播放 ${data.mode}`}>
               <SvgIcon name={data.playing ? "pause" : "play"} size={14} />
               {data.playing ? "暫停" : "播放"}
             </button>
-            <button type="button" onClick={data.onReplay}>
+            <button type="button" data-testid={`playback-replay-${data.mode}`} onClick={data.onReplay}>
               <SvgIcon name="replay" size={14} />
               重播
             </button>
@@ -386,6 +409,8 @@ function PacketEdgeComponent({ id, sourceX, sourceY, targetX, targetY, data, mar
         <EdgeLabelRenderer>
           <div
             className={`edge-label edge-label--${data.packetKind ?? "request"}`}
+            data-testid="edge-label"
+            data-edge-id={id}
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY + (data?.labelOffset ?? -24)}px)` }}
           >
             <span />
@@ -402,13 +427,13 @@ function CanvasToolbar() {
 
   return (
     <Panel position="top-left" className="canvas-toolbar">
-      <button type="button" onClick={() => zoomIn({ duration: 160 })} aria-label="放大" title="放大">
+      <button type="button" data-testid="zoom-in" onClick={() => zoomIn({ duration: 160 })} aria-label="放大" title="放大">
         <SvgIcon name="zoom-in" size={18} />
       </button>
-      <button type="button" onClick={() => zoomOut({ duration: 160 })} aria-label="縮小" title="縮小">
+      <button type="button" data-testid="zoom-out" onClick={() => zoomOut({ duration: 160 })} aria-label="縮小" title="縮小">
         <SvgIcon name="zoom-out" size={18} />
       </button>
-      <button type="button" onClick={() => fitView({ padding: 0.12, duration: 280 })} aria-label="將所有內容置中" title="Fit view · 將所有內容置中">
+      <button type="button" data-testid="fit-view" onClick={() => fitView({ padding: 0.12, duration: 280 })} aria-label="將所有內容置中" title="Fit view · 將所有內容置中">
         <SvgIcon name="fit" size={18} />
       </button>
     </Panel>
@@ -467,11 +492,11 @@ const nodeTypes = {
 };
 const edgeTypes = { packetEdge: PacketEdgeComponent };
 
-function sequenceFor(mode: Mode) {
+function sequenceFor(flowConfigByMode: FlowConfigByMode, mode: Mode) {
   return flowConfigByMode[mode].steps;
 }
 
-function debugData(mode: Mode, nodeId: string, runtime: FlowRuntime): DebugNodeData {
+function debugData(flowConfigByMode: FlowConfigByMode, mode: Mode, nodeId: string, runtime: FlowRuntime): DebugNodeData {
   const flow = flowConfigByMode[mode];
   const node = flow.nodes.find((candidate) => candidate.id === nodeId);
   if (!node) throw new Error(`Unknown ${mode} node: ${nodeId}`);
@@ -490,8 +515,8 @@ function debugData(mode: Mode, nodeId: string, runtime: FlowRuntime): DebugNodeD
   };
 }
 
-function playbackData(mode: Mode, runtime: FlowRuntime, actions: PlaybackActions): PlaybackData {
-  const sequence = sequenceFor(mode);
+function playbackData(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: FlowRuntime, actions: PlaybackActions): PlaybackData {
+  const sequence = sequenceFor(flowConfigByMode, mode);
   const finished = runtime.step === sequence.length - 1;
   const title = sequence[runtime.step].title;
 
@@ -508,7 +533,7 @@ function playbackData(mode: Mode, runtime: FlowRuntime, actions: PlaybackActions
   };
 }
 
-function flowNodes(mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions): CanvasNode[] {
+function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions): CanvasNode[] {
   const flow = flowConfigByMode[mode];
   const groupId = `${mode}-group`;
   const groupWidth = Math.max(1000, 128 + flow.nodes.length * 310);
@@ -537,7 +562,7 @@ function flowNodes(mode: Mode, groupPosition: { x: number; y: number }, runtime:
       type: "debugNode" as const,
       position: { x: 64 + index * 310, y: 78 },
       parentId: groupId,
-      data: debugData(mode, node.id, runtime),
+      data: debugData(flowConfigByMode, mode, node.id, runtime),
       draggable: true,
     })),
     {
@@ -545,13 +570,13 @@ function flowNodes(mode: Mode, groupPosition: { x: number; y: number }, runtime:
       type: "playbackNode",
       position: { x: 135, y: 252 },
       parentId: groupId,
-      data: playbackData(mode, runtime, actions),
+      data: playbackData(flowConfigByMode, mode, runtime, actions),
       draggable: true,
     },
   ];
 }
 
-function flowEdges(mode: Mode, runtime: FlowRuntime): PacketEdge[] {
+function flowEdges(flowConfigByMode: FlowConfigByMode, mode: Mode, runtime: FlowRuntime): PacketEdge[] {
   const semanticColor: Record<BoardEdgeSemantic, string> = {
     request: "#2563eb",
     query: "#f57c00",
@@ -585,7 +610,7 @@ function flowEdges(mode: Mode, runtime: FlowRuntime): PacketEdge[] {
   });
 }
 
-function useFlowPlayback(runtime: FlowRuntime, setRuntime: Dispatch<SetStateAction<FlowRuntime>>, total: number) {
+function useFlowPlayback(runtime: FlowRuntime, setRuntime: Dispatch<SetStateAction<FlowRuntime>>, total: number, timeScale: number) {
   useEffect(() => {
     if (!runtime.playing) return;
     if (runtime.step >= total - 1) {
@@ -593,21 +618,43 @@ function useFlowPlayback(runtime: FlowRuntime, setRuntime: Dispatch<SetStateActi
       return;
     }
 
-    const delay = runtime.step === 0 ? 1800 : 2600;
+    const delay = Math.max(20, (runtime.step === 0 ? 1800 : 2600) * timeScale);
     const timer = window.setTimeout(() => setRuntime((current) => ({ ...current, step: current.step + 1 })), delay);
     return () => window.clearTimeout(timer);
-  }, [runtime.playing, runtime.step, setRuntime, total]);
+  }, [runtime.playing, runtime.step, setRuntime, timeScale, total]);
 }
 
-export default function Home() {
-  const [before, setBefore] = useState<FlowRuntime>({ step: 0, playing: false });
-  const [after, setAfter] = useState<FlowRuntime>({ step: 0, playing: false });
+function nextFrame() {
+  return new Promise<void>((resolvePromise) => window.requestAnimationFrame(() => resolvePromise()));
+}
+
+async function waitForCanvasAssets() {
+  await document.fonts?.ready;
+  await Promise.all(Array.from(document.images).map((image) => {
+    if (image.complete) return Promise.resolve();
+    return new Promise<void>((resolvePromise) => {
+      image.addEventListener("load", () => resolvePromise(), { once: true });
+      image.addEventListener("error", () => resolvePromise(), { once: true });
+    });
+  }));
+}
+
+function BoardCanvas({ loaded }: { loaded: LoadedBoard }) {
+  const { config: boardConfig, configHash, finalStep, initialFlow, timeScale } = loaded;
+  const flowConfigByMode = useMemo(() => Object.fromEntries(boardConfig.flows.map((flow) => [flow.id, flow])) as FlowConfigByMode, [boardConfig]);
+  const initialRuntime = useCallback((mode: Mode): FlowRuntime => ({
+    step: finalStep && initialFlow === mode ? flowConfigByMode[mode].steps.length - 1 : 0,
+    playing: false,
+  }), [finalStep, flowConfigByMode, initialFlow]);
+  const [before, setBefore] = useState<FlowRuntime>(() => initialRuntime("before"));
+  const [after, setAfter] = useState<FlowRuntime>(() => initialRuntime("after"));
   const [tool, setTool] = useState<CanvasTool>("select");
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance<CanvasNode, PacketEdge> | null>(null);
   const [customEdges, setCustomEdges] = useState<PacketEdge[]>([]);
+  const [boardReady, setBoardReady] = useState(false);
 
-  useFlowPlayback(before, setBefore, flowConfigByMode.before.steps.length);
-  useFlowPlayback(after, setAfter, flowConfigByMode.after.steps.length);
+  useFlowPlayback(before, setBefore, flowConfigByMode.before.steps.length, timeScale);
+  useFlowPlayback(after, setAfter, flowConfigByMode.after.steps.length, timeScale);
 
   const beforeActions = useMemo<PlaybackActions>(() => ({
     onToggle: () => setBefore((current) => ({ ...current, playing: !current.playing })),
@@ -622,8 +669,8 @@ export default function Home() {
   }), []);
 
   const initialNodes: CanvasNode[] = [
-    ...flowNodes("before", flowConfigByMode.before.position, before, beforeActions),
-    ...flowNodes("after", flowConfigByMode.after.position, after, afterActions),
+    ...flowNodes(flowConfigByMode, "before", flowConfigByMode.before.position, before, beforeActions),
+    ...flowNodes(flowConfigByMode, "after", flowConfigByMode.after.position, after, afterActions),
   ];
 
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(initialNodes);
@@ -632,22 +679,22 @@ export default function Home() {
     setNodes((current) => current.map((node) => {
       if (node.type === "debugNode") {
         const runtime = node.data.mode === "before" ? before : after;
-        return { ...node, data: debugData(node.data.mode, node.data.nodeId, runtime) };
+        return { ...node, data: debugData(flowConfigByMode, node.data.mode, node.data.nodeId, runtime) };
       }
       if (node.type === "playbackNode") {
         const runtime = node.data.mode === "before" ? before : after;
         const actions = node.data.mode === "before" ? beforeActions : afterActions;
-        return { ...node, data: playbackData(node.data.mode, runtime, actions) };
+        return { ...node, data: playbackData(flowConfigByMode, node.data.mode, runtime, actions) };
       }
       return node;
     }));
-  }, [after, afterActions, before, beforeActions, setNodes]);
+  }, [after, afterActions, before, beforeActions, flowConfigByMode, setNodes]);
 
   const edges = useMemo<PacketEdge[]>(() => [
-    ...flowEdges("before", before),
-    ...flowEdges("after", after),
+    ...flowEdges(flowConfigByMode, "before", before),
+    ...flowEdges(flowConfigByMode, "after", after),
     ...customEdges,
-  ], [after, before, customEdges]);
+  ], [after, before, customEdges, flowConfigByMode]);
 
   const onPaneClick = useCallback((event: ReactMouseEvent) => {
     if (!flowInstance || !["text", "note", "shape"].includes(tool)) return;
@@ -709,14 +756,31 @@ export default function Home() {
 
   const onInit = useCallback((instance: ReactFlowInstance<CanvasNode, PacketEdge>) => {
     setFlowInstance(instance);
-    window.requestAnimationFrame(() => {
+    const markRendered = async () => {
+      await nextFrame();
       const problemBoard = instance.getNodes().filter((node) => node.id === "before-group" || node.id === "after-group");
-      void instance.fitView({ nodes: problemBoard, padding: 0.08, maxZoom: 1, duration: 0 });
-    });
+      await instance.fitView({ nodes: problemBoard, padding: 0.08, maxZoom: 1, duration: 0 });
+      await waitForCanvasAssets();
+      await nextFrame();
+      await nextFrame();
+      setBoardReady(true);
+    };
+    void markRendered();
   }, []);
 
+  const serviceNodeCount = boardConfig.flows.reduce((count, flow) => count + flow.nodes.length, 0);
+  const edgeCount = boardConfig.flows.reduce((count, flow) => count + flow.edges.length, 0);
+
   return (
-    <main className="canvas-app">
+    <main
+      className="canvas-app"
+      data-board-ready={boardReady ? "true" : "false"}
+      data-config-sha256={configHash}
+      data-render-protocol={renderProtocol}
+      data-service-node-count={serviceNodeCount}
+      data-edge-count={edgeCount}
+      data-label-count={edgeCount}
+    >
       <ReactFlow
         className={`canvas-tool--${tool}`}
         nodes={nodes}
@@ -744,4 +808,48 @@ export default function Home() {
       </ReactFlow>
     </main>
   );
+}
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export default function Home() {
+  const [loaded, setLoaded] = useState<LoadedBoard | null>(null);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const requestedHash = params.get("config");
+      const initialFlow: Mode = params.get("flow") === "before" ? "before" : "after";
+      const finalStep = params.get("step") === "final";
+      const requestedTimeScale = Number(params.get("timeScale") ?? "1");
+      const timeScale = Number.isFinite(requestedTimeScale) && requestedTimeScale > 0 ? Math.max(0.01, requestedTimeScale) : 1;
+
+      if (!requestedHash) {
+        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", finalStep, initialFlow, timeScale });
+        return;
+      }
+      if (!/^[a-f0-9]{64}$/.test(requestedHash)) throw new Error("Invalid runtime config hash");
+
+      const response = await fetch(`/runtime/${requestedHash}.json`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Runtime config returned HTTP ${response.status}`);
+      const source = await response.text();
+      const actualHash = await sha256(source);
+      if (actualHash !== requestedHash) throw new Error(`Runtime config hash mismatch: expected ${requestedHash}, received ${actualHash}`);
+      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, finalStep, initialFlow, timeScale });
+    };
+
+    void load().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : String(error)));
+  }, []);
+
+  if (loadError) {
+    return <main className="canvas-app" data-board-ready="false" data-board-error={loadError} role="alert">{loadError}</main>;
+  }
+  if (!loaded) {
+    return <main className="canvas-app" data-board-ready="false" aria-busy="true" />;
+  }
+  return <BoardCanvas key={loaded.configHash} loaded={loaded} />;
 }

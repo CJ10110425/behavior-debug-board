@@ -25,6 +25,8 @@ npm run board
 3. 等待健康檢查通過。
 4. 打開 `http://localhost:3001/`。
 
+每份輸入會先正規化並寫到 ignored 的 `public/runtime/<sha256>.json`；網址帶有相同 hash，舊 server 不會因 HMR 或上一份 config 顯示錯內容。
+
 只想開發 UI 時可執行：
 
 ```bash
@@ -44,6 +46,19 @@ npm run board -- --config /absolute/path/to/board.json --port 3001
 ```bash
 npm run board:prepare -- --config /absolute/path/to/board.json
 ```
+
+一鍵完成 render readiness、數量核對、After 最終狀態與截圖：
+
+```bash
+npm run board:qa -- \
+  --config /absolute/path/to/board.json \
+  --port auto \
+  --flow after \
+  --final-step \
+  --screenshot /absolute/path/to/result.jpg
+```
+
+修改 renderer 時再加 `--full`，驗證重播、loading、拖曳、縮放與 Fit view。一般產生 board 使用 fast QA，保留正常播放速度給使用者；QA 只在測試頁面內加速。
 
 ## 安裝成 Codex skill
 
@@ -94,7 +109,7 @@ Firebase 與 Cloud Firestore SVG 已附在 `public/logos/` 與 skill 的 `assets
 npm run check
 ```
 
-這會驗證 skill 結構、執行 unit / integration / routing / CLI E2E 測試，最後完成 production build。
+這會驗證 skill 結構、執行 unit / integration / routing / CLI 測試，最後完成 production build。真實瀏覽器 smoke test 使用 `npm run board:qa`；完整 renderer regression 使用同一命令加 `--full`。
 
 ## 開放貢獻
 

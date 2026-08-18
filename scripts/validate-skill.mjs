@@ -16,6 +16,7 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
     skill: resolve(skillRoot, "SKILL.md"),
     manifest: resolve(skillRoot, "agents/openai.yaml"),
     launcher: resolve(skillRoot, "scripts/behavior-debug-board.mjs"),
+    qa: resolve(skillRoot, "scripts/qa-board.mjs"),
     schema: resolve(skillRoot, "references/board-schema.md"),
     logoMcp: resolve(skillRoot, "references/logo-mcp.md"),
     rendering: resolve(skillRoot, "references/rendering-stack.md"),
@@ -44,6 +45,8 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/^name: behavior-debug-board$/m.test(frontmatter[1]), "skill name must match its directory");
   assert(/Start localhost, wait for a healthy response, and open the board/.test(skill), "skill contract must require opening localhost");
   assert(/Producing JSON without opening the board is incomplete/.test(skill), "skill must reject JSON-only completion");
+  assert(/BOARD_RENDERED/.test(skill) && /BOARD_QA_PASS/.test(skill), "skill contract must distinguish server and render readiness");
+  assert(/--full/.test(skill), "skill must document full renderer regression QA");
   assert(/value: "thesvg"/.test(manifest), "agents/openai.yaml must declare the Logo MCP dependency");
   assert(/allow_implicit_invocation: true/.test(manifest), "skill must allow implicit routing");
   assert(/behavior-debug-board/.test(resolver) && /本地端動態 Board/.test(resolver), "resolver entry is missing");

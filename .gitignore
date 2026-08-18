@@ -38,5 +38,6 @@ yarn-error.log*
 *.tsbuildinfo
 /.wrangler/
 /outputs/
+/public/runtime/
 /work/
 .gstack-codex/

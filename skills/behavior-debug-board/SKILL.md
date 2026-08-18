@@ -16,6 +16,8 @@ Guarantee all of the following:
 - Render every edge, arrowhead, and label before playback starts. Playback only highlights an existing edge and moves its packet.
 - Describe behavior, cause, and user-visible result. Do not expose commit hashes or code diffs unless requested.
 - Preserve official brand colors and store fetched SVGs locally for offline use.
+- Load each generated board from an immutable SHA-256 runtime URL; never overwrite a tracked app fixture.
+- Treat `BOARD_SERVER_READY` as transport readiness only. Completion requires `BOARD_RENDERED` and `BOARD_QA_PASS` from browser QA.
 - Start localhost, wait for a healthy response, and open the board for the user. Producing JSON without opening the board is incomplete.
 
 ## Workflow
@@ -23,20 +25,26 @@ Guarantee all of the following:
 1. Gather the bug symptom, actors/services, observed path, root cause, fix, and verified result.
 2. Read [references/board-schema.md](references/board-schema.md), then write a version-1 board JSON file.
 3. For named products, read [references/logo-mcp.md](references/logo-mcp.md). Try the Logo MCP first, then search the web for an official brand/media asset and trusted registries. Save a trustworthy SVG under `public/logos/` and record its source. If no reliable logo exists, classify the service and set `categoryIcon`; never invent a brand mark.
-4. Validate and prepare the board:
+4. Run the fast browser QA. This validates the config, chooses/reuses a port, waits for React Flow hydration/layout/fit-view, verifies node/edge/label counts, opens the selected flow at its final step, and writes a correctly typed screenshot plus JSON report:
 
    ```bash
-   node skills/behavior-debug-board/scripts/behavior-debug-board.mjs prepare --config /absolute/path/to/board.json
+   node skills/behavior-debug-board/scripts/behavior-debug-board.mjs qa \
+     --config /absolute/path/to/board.json \
+     --port auto \
+     --flow after \
+     --final-step \
+     --screenshot /absolute/path/to/result.jpg
    ```
 
-5. Launch the local board:
+5. Use `--full` when changing the renderer itself. Full QA additionally exercises replay, loading, drag, zoom, and fit-view. Do not pay this cost for every generated board.
+6. Launch the local board for the user:
 
    ```bash
-   node skills/behavior-debug-board/scripts/behavior-debug-board.mjs launch --config /absolute/path/to/board.json --port 3001
+   node skills/behavior-debug-board/scripts/behavior-debug-board.mjs launch --config /absolute/path/to/board.json --port auto
    ```
 
-6. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_READY`, then open the printed `BOARD_URL` in that browser. Otherwise let the launcher open the system browser.
-7. Verify that all cards, independent directional edges, labels, loading indicators, replay controls, drag behavior, zoom, and fit-view work.
+7. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_SERVER_READY`, then open the printed hash-addressed `BOARD_URL` in that browser. Otherwise let the launcher open the system browser.
+8. Report the `BOARD_QA_REPORT` and `BOARD_SCREENSHOT` paths. A screenshot captured before `data-board-ready="true"` is invalid.
 
 ## Diagram Rules
 
@@ -55,7 +63,8 @@ Guarantee all of the following:
 - [references/rendering-stack.md](references/rendering-stack.md): renderer, animation, and UI-icon implementation.
 - `assets/example-board.json`: smallest complete Before/After configuration to copy and edit.
 - `assets/logos/`: offline Firebase and Firestore fallbacks.
-- `scripts/behavior-debug-board.mjs`: validate, prepare, launch, wait, and open the board.
+- `scripts/behavior-debug-board.mjs`: validate, hash-prepare, launch, wait, and open the board.
+- `scripts/qa-board.mjs`: fast/full Playwright QA, structured report, and magic-byte-safe screenshot capture.
 
 ## Output Format
 
@@ -63,10 +72,11 @@ Return:
 
 ```text
 Board: <absolute config path>
-URL: http://localhost:<port>/
+URL: http://localhost:<port>/?config=<sha256>
 Opened: Codex browser | system browser
 Flows: Before <node/edge counts>; After <node/edge counts>
 Logos: <service → local SVG → source>
+QA: <fast|full> pass · <report path> · <screenshot path and MIME>
 ```
 
 When blocked, state whether the failure is invalid config, missing runtime dependencies, unavailable Logo MCP/network, occupied port, or unhealthy local server.
