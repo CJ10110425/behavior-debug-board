@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { prepareBoard, prepareRuntimeBoard, validateBoardConfig } from "../skills/difftale/scripts/difftale.mjs";
+import { inferScreenFrame, prepareBoard, prepareRuntimeBoard, readRasterDimensions, validateBoardConfig } from "../skills/difftale/scripts/difftale.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const defaultConfigPath = resolve(repoRoot, "skills/difftale/assets/example-board.json");
@@ -14,6 +14,40 @@ const fanoutConfig = JSON.parse(await readFile(fanoutConfigPath, "utf8"));
 
 function cloneConfig() {
   return structuredClone(defaultConfig);
+}
+
+function pngDimensions(width, height) {
+  const buffer = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buffer);
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+}
+
+function jpegDimensions(width, height) {
+  const buffer = Buffer.alloc(21);
+  Buffer.from([0xff, 0xd8, 0xff, 0xc0]).copy(buffer);
+  buffer.writeUInt16BE(17, 4);
+  buffer[6] = 8;
+  buffer.writeUInt16BE(height, 7);
+  buffer.writeUInt16BE(width, 9);
+  return buffer;
+}
+
+function webpDimensions(width, height) {
+  const buffer = Buffer.alloc(30);
+  buffer.write("RIFF", 0, "ascii");
+  buffer.write("WEBP", 8, "ascii");
+  buffer.write("VP8X", 12, "ascii");
+  const encodedWidth = width - 1;
+  const encodedHeight = height - 1;
+  buffer[24] = encodedWidth & 0xff;
+  buffer[25] = (encodedWidth >> 8) & 0xff;
+  buffer[26] = (encodedWidth >> 16) & 0xff;
+  buffer[27] = encodedHeight & 0xff;
+  buffer[28] = (encodedHeight >> 8) & 0xff;
+  buffer[29] = (encodedHeight >> 16) & 0xff;
+  return buffer;
 }
 
 function rejectsMutation(name, mutate, pattern) {
@@ -60,6 +94,20 @@ test("accepts version 3 screenshot screen nodes", () => {
   screen.route = "/login";
   delete screen.categoryIcon;
   assert.equal(validateBoardConfig(config).flows[0].nodes[0].kind, "screen");
+});
+
+test("reads raster dimensions and infers clear mobile and browser layouts", () => {
+  assert.deepEqual(readRasterDimensions(pngDimensions(390, 844)), { width: 390, height: 844, format: "png" });
+  assert.deepEqual(readRasterDimensions(jpegDimensions(1440, 900)), { width: 1440, height: 900, format: "jpeg" });
+  assert.deepEqual(readRasterDimensions(webpDimensions(390, 844)), { width: 390, height: 844, format: "webp" });
+  assert.equal(inferScreenFrame({ width: 390, height: 844 }).frame, "mobile");
+  assert.equal(inferScreenFrame({ width: 1440, height: 900 }).frame, "browser");
+});
+
+test("requires user confirmation for an ambiguous high-resolution portrait", () => {
+  const result = inferScreenFrame({ width: 1179, height: 2556 });
+  assert.equal(result.frame, undefined);
+  assert.equal(result.confidence, "ambiguous");
 });
 
 rejectsMutation("requires local raster assets for screen nodes", (config) => {
@@ -141,7 +189,7 @@ test("runtime preparation copies board-local logo assets without changing canoni
   assert.equal(JSON.parse(await readFile(result.runtimePath, "utf8")).flows[0].nodes[1].logo, "assets/acme.svg");
 });
 
-test("runtime preparation copies board-local screenshot assets", async (context) => {
+test("runtime preparation infers a missing frame and copies board-local screenshot assets", async (context) => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "difftale-screen-assets-"));
   context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const boardDirectory = join(temporaryRoot, "board");
@@ -152,14 +200,36 @@ test("runtime preparation copies board-local screenshot assets", async (context)
   const screen = config.flows[0].nodes[0];
   screen.kind = "screen";
   screen.screenshot = "assets/screens/login-deadbeef.png";
-  screen.frame = "browser";
   delete screen.categoryIcon;
   const configPath = join(boardDirectory, "board.json");
-  const screenshot = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  const screenshot = pngDimensions(1280, 720);
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await writeFile(join(boardDirectory, screen.screenshot), screenshot);
 
   const result = await prepareRuntimeBoard({ configPath, repoRoot: runtimeRoot });
   const copied = await readFile(join(runtimeRoot, "public", "runtime", "assets", result.configHash, "screens", "login-deadbeef.png"));
   assert.deepEqual(copied, screenshot);
+  assert.equal(JSON.parse(await readFile(result.runtimePath, "utf8")).flows[0].nodes[0].frame, "browser");
+});
+
+test("runtime preparation asks for confirmation when screenshot geometry is ambiguous", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "difftale-ambiguous-screen-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const boardDirectory = join(temporaryRoot, "board");
+  await mkdir(join(boardDirectory, "assets", "screens"), { recursive: true });
+  const config = cloneConfig();
+  config.version = 3;
+  const screen = config.flows[0].nodes[0];
+  screen.kind = "screen";
+  screen.screenshot = "assets/screens/ambiguous.png";
+  delete screen.frame;
+  delete screen.categoryIcon;
+  const configPath = join(boardDirectory, "board.json");
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await writeFile(join(boardDirectory, screen.screenshot), pngDimensions(1179, 2556));
+
+  await assert.rejects(
+    prepareRuntimeBoard({ configPath, repoRoot: join(temporaryRoot, "renderer") }),
+    /frame needs user confirmation/,
+  );
 });

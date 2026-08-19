@@ -59,3 +59,11 @@ test("unknown brands escalate from web search to a category icon without inventi
   assert.match(workflow, /use `categoryIcon`/);
   assert.match(workflow, /Never redraw, recolor, approximate, or generate a brand logo/);
 });
+
+test("screen workflow inspects project layout before using screenshot geometry", async () => {
+  const workflow = await readFile(resolve(skillRoot, "references/screenshots.md"), "utf8");
+  assert.match(workflow, /Project code and the actual screen layout/);
+  assert.match(workflow, /React Native, Expo, Flutter, SwiftUI/);
+  assert.match(workflow, /responsive web page captured at a phone viewport uses `mobile`/);
+  assert.match(workflow, /Ask the user when code, viewport, and dimensions disagree/);
+});

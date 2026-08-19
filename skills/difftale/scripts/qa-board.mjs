@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 
 import { makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./difftale.mjs";
 import { startBoardSaveServer } from "./save-board-server.mjs";
 
-const renderProtocol = "4";
+const renderProtocol = "5";
 
 function ensure(condition, message) {
   if (!condition) throw new Error(message);
@@ -222,7 +222,7 @@ async function runFullInteractionQa(page, config, flow, checks) {
   checks["card-text-editing"] = true;
 
   const draggable = page.locator(".react-flow__node-debugNode").first();
-  const dragSurface = draggable.locator(".debug-node__topline");
+  const dragSurface = draggable.locator(".debug-node__topline, .screen-card__meta").first();
   const box = await dragSurface.boundingBox();
   ensure(box, "service node drag surface has no bounding box");
   const beforeDrag = await draggable.evaluate((element) => getComputedStyle(element).transform);
@@ -298,7 +298,8 @@ export async function runBoardQa(options) {
 
   const screenshotPath = options.screenshotPath ?? resolve(options.repoRoot, "outputs/qa", prepared.configHash, "board.jpg");
   const reportPath = options.reportPath ?? resolve(dirname(screenshotPath), "qa-report.json");
-  const qaSavePath = resolve(dirname(screenshotPath), "qa-board.local.json");
+  const qaRuntimeRoot = resolve(dirname(screenshotPath), ".qa-runtime", `${prepared.configHash}-${randomBytes(6).toString("hex")}`);
+  const qaSavePath = resolve(qaRuntimeRoot, "board.json");
   await mkdir(dirname(qaSavePath), { recursive: true });
   await writeFile(qaSavePath, prepared.source, "utf8");
   await copyQaBoardAssets(prepared.config, prepared.configPath, qaSavePath);
@@ -314,6 +315,7 @@ export async function runBoardQa(options) {
   const expected = {
     serviceNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.length, 0),
     screenNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.filter((node) => node.kind === "screen").length, 0),
+    mobileScreens: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.filter((node) => node.kind === "screen" && node.frame === "mobile").length, 0),
     edges: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
     labels: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
     playbackCards: prepared.config.flows.length,
@@ -350,12 +352,14 @@ export async function runBoardQa(options) {
     actual = {
       serviceNodes: await page.locator('[data-testid="service-node"]').count(),
       screenNodes: await page.locator('[data-testid="service-node"][data-node-kind="screen"]').count(),
+      mobileScreens: await page.locator('[data-testid="service-node"][data-screen-frame="mobile"]').count(),
       edges: await page.locator(".react-flow__edge").count(),
       labels: await page.locator('[data-testid="edge-label"]').count(),
       playbackCards: await page.locator('[data-testid="playback-card"]').count(),
     };
     ensure(actual.serviceNodes === expected.serviceNodes, `rendered ${actual.serviceNodes} service nodes; expected ${expected.serviceNodes}`);
     ensure(actual.screenNodes === expected.screenNodes, `rendered ${actual.screenNodes} screen nodes; expected ${expected.screenNodes}`);
+    ensure(actual.mobileScreens === expected.mobileScreens, `rendered ${actual.mobileScreens} mobile screen nodes; expected ${expected.mobileScreens}`);
     ensure(actual.edges === expected.edges, `rendered ${actual.edges} edges; expected ${expected.edges}`);
     ensure(actual.labels === expected.labels, `rendered ${actual.labels} labels; expected ${expected.labels}`);
     ensure(actual.playbackCards === expected.playbackCards, `rendered ${actual.playbackCards} playback cards; expected ${expected.playbackCards}`);
@@ -371,8 +375,11 @@ export async function runBoardQa(options) {
       ensure(screenshotState.length === expected.screenNodes, "not every screen node rendered a screenshot");
       ensure(screenshotState.every((image) => image.complete && image.naturalWidth > 0), "one or more screen screenshots failed to load");
       ensure(screenshotState.every((image) => image.source.includes(`/runtime/assets/${prepared.configHash}/`)), "screen screenshot did not load from the immutable local runtime bundle");
+      ensure(await page.locator('[data-testid="service-node"][data-node-kind="screen"] .debug-node__detail').count() === 0, "screen cards rendered the long service detail footer");
       checks["screen-nodes"] = true;
       checks["screen-assets"] = true;
+      checks["screen-frame-layout"] = true;
+      checks["concise-screen-copy"] = true;
     }
     checks["editable-card-copy"] = true;
     checks.edges = true;
@@ -493,5 +500,6 @@ export async function runBoardQa(options) {
     await browser?.close();
     await saveBridge.close();
     if (!server.reused) await server.stop();
+    await rm(qaRuntimeRoot, { recursive: true, force: true });
   }
 }

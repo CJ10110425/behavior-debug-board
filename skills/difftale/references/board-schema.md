@@ -70,9 +70,10 @@ The renderer accepts versions `1` and `2` for service-only Boards. Version `3` a
 ```
 
 - Screen nodes require Board version `3` and a board-local PNG, JPEG, or WebP screenshot.
-- `frame` may be `browser`, `mobile`, or `app`.
+- `frame` may be `browser`, `mobile`, or `app`. Determine it from explicit user context, project layout/platform code, and the captured viewport before falling back to image dimensions. Ambiguous evidence requires user confirmation.
 - Screen nodes do not use `logo` or `categoryIcon`.
 - Treat screenshot paths as immutable. Write a new filename when the captured pixels change.
+- The renderer keeps screen copy compact. Mobile frames display only the editable title and one-line description around the device frame; `detail` remains available for semantic diff and playback context.
 
 ## Canvas persistence
 

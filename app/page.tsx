@@ -166,10 +166,10 @@ type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
 type SingleSourceFanout = { source: string; targets: [string, string] };
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
-const renderProtocol = "4";
+const renderProtocol = "5";
 const serviceNodeWidth = 226;
-const browserScreenNodeWidth = 340;
-const mobileScreenNodeWidth = 240;
+const browserScreenNodeWidth = 380;
+const mobileScreenNodeWidth = 230;
 const minimumNodeGap = 84;
 const edgeLabelChromeWidth = 26;
 const edgeLabelSafetyGap = 24;
@@ -279,72 +279,103 @@ function TextLabelCard({ id, data }: NodeProps<LabelNode>) {
   );
 }
 
+function NodeStatusIndicator({ status }: { status: NodeStatus }) {
+  return (
+    <span className={`node-status node-status--${status}`} aria-live="polite">
+      {status === "running"
+        ? <span className="node-status__spinner" aria-hidden="true" />
+        : <span className="node-status__dot" />}
+      {statusLabel[status]}
+    </span>
+  );
+}
+
 function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
   const { updateNodeData } = useReactFlow<DebugNode, PacketEdge>();
   const updateCopy = (field: "title" | "subtitle", value: string) => updateNodeData(id, { [field]: value });
   const isScreen = data.kind === "screen";
-  const frameIcon = data.frame === "mobile" ? categoryIconPath["mobile-app"] : categoryIconPath["web-app"];
+  const screenFrame = data.frame ?? "browser";
+  const screenFrameLabel = screenFrame === "mobile" ? "Mobile" : screenFrame === "app" ? "App" : "Web";
 
   return (
     <div
-      className={`debug-node debug-node--${data.kind} debug-node--${data.status}`}
+      className={`debug-node debug-node--${data.kind} debug-node--${data.status}${isScreen ? ` debug-node--screen-${screenFrame}` : ""}`}
       data-testid="service-node"
       data-node-kind={data.kind}
+      data-screen-frame={isScreen ? screenFrame : undefined}
       data-flow={data.mode}
       data-node-id={data.nodeId}
       data-status={data.status}
     >
       <Handle id="forward-in" type="target" position={Position.Left} className="debug-handle" style={{ top: "42%" }} />
       <Handle id="return-out" type="source" position={Position.Left} className="debug-handle" style={{ top: "72%" }} />
-      <div className="debug-node__topline">
-        <div className="debug-node__icon">
-          {isScreen
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img className="category-icon" src={frameIcon} alt="" aria-hidden="true" />
-            : <ServiceIcon data={data} />}
-        </div>
-        <span className={`node-status node-status--${data.status}`} aria-live="polite">
-          {data.status === "running"
-            ? <span className="node-status__spinner" aria-hidden="true" />
-            : <span className="node-status__dot" />}
-          {statusLabel[data.status]}
-        </span>
-      </div>
-      <div className="debug-node__body">
-        <input
-          className="debug-node__copy debug-node__copy--title nodrag nowheel nopan"
-          data-testid="service-title-input"
-          value={data.title}
-          aria-label={`${data.mode} ${data.nodeId} card title`}
-          onChange={(event) => updateCopy("title", event.target.value)}
-          onKeyDown={(event) => event.stopPropagation()}
-        />
-        <input
-          className="debug-node__copy debug-node__copy--description nodrag nowheel nopan"
-          data-testid="service-description-input"
-          value={data.subtitle}
-          aria-label={`${data.mode} ${data.nodeId} card description`}
-          onChange={(event) => updateCopy("subtitle", event.target.value)}
-          onKeyDown={(event) => event.stopPropagation()}
-        />
-      </div>
       {isScreen ? (
-        <figure className={`screen-preview screen-preview--${data.frame ?? "browser"}`} data-testid="screen-preview">
-          {data.frame !== "mobile" ? (
+        <>
+          <div className="screen-card__header">
+            <div className="screen-card__meta">
+              <span className="screen-card__frame-label">{screenFrameLabel}</span>
+              {data.changed ? <span className="screen-card__changed">已修改</span> : null}
+              <NodeStatusIndicator status={data.status} />
+            </div>
+            <input
+              className="screen-card__copy screen-card__copy--title nodrag nowheel nopan"
+              data-testid="service-title-input"
+              value={data.title}
+              aria-label={`${data.mode} ${data.nodeId} card title`}
+              onChange={(event) => updateCopy("title", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+            <input
+              className="screen-card__copy screen-card__copy--description nodrag nowheel nopan"
+              data-testid="service-description-input"
+              value={data.subtitle}
+              aria-label={`${data.mode} ${data.nodeId} card description`}
+              onChange={(event) => updateCopy("subtitle", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+          </div>
+          <figure className={`screen-preview screen-preview--${screenFrame}`} data-testid="screen-preview">
+          {screenFrame !== "mobile" ? (
             <figcaption className="screen-preview__chrome">
-              <span className="screen-preview__dots" aria-hidden="true"><i /><i /><i /></span>
-              <span>{data.route || (data.frame === "app" ? "App" : "Web")}</span>
+              {screenFrame === "browser" ? <span className="screen-preview__dots" aria-hidden="true"><i /><i /><i /></span> : null}
+              <span>{data.route || (screenFrame === "app" ? "Desktop App" : "Web")}</span>
             </figcaption>
-          ) : <span className="screen-preview__speaker" aria-hidden="true" />}
+          ) : <span className="screen-preview__island" aria-hidden="true" />}
           {/* Board screenshots are durable local assets copied into the hash-addressed runtime bundle. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img className="screen-preview__image nodrag" src={data.screenshot} alt={`${data.title} 畫面截圖`} draggable={false} />
-        </figure>
-      ) : null}
-      <div className="debug-node__detail">
-        {data.changed ? <span className="changed-badge">修改位置</span> : null}
-        <span>{data.route && data.frame === "mobile" ? `${data.route} · ${data.detail}` : data.detail}</span>
-      </div>
+          </figure>
+        </>
+      ) : (
+        <>
+          <div className="debug-node__topline">
+            <div className="debug-node__icon"><ServiceIcon data={data} /></div>
+            <NodeStatusIndicator status={data.status} />
+          </div>
+          <div className="debug-node__body">
+            <input
+              className="debug-node__copy debug-node__copy--title nodrag nowheel nopan"
+              data-testid="service-title-input"
+              value={data.title}
+              aria-label={`${data.mode} ${data.nodeId} card title`}
+              onChange={(event) => updateCopy("title", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+            <input
+              className="debug-node__copy debug-node__copy--description nodrag nowheel nopan"
+              data-testid="service-description-input"
+              value={data.subtitle}
+              aria-label={`${data.mode} ${data.nodeId} card description`}
+              onChange={(event) => updateCopy("subtitle", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+          </div>
+          <div className="debug-node__detail">
+            {data.changed ? <span className="changed-badge">修改位置</span> : null}
+            <span>{data.detail}</span>
+          </div>
+        </>
+      )}
       <Handle id="forward-out" type="source" position={Position.Right} className="debug-handle" style={{ top: "42%" }} />
       <Handle id="return-in" type="target" position={Position.Right} className="debug-handle" style={{ top: "72%" }} />
     </div>
@@ -650,7 +681,7 @@ function nodeWidth(node: BoardNodeConfig) {
 
 function nodeHeight(node: BoardNodeConfig) {
   if (node.kind !== "screen") return 150;
-  return node.frame === "mobile" ? 475 : 384;
+  return node.frame === "mobile" ? 535 : 390;
 }
 
 function nodePositionsForFlow(flow: BoardFlowConfig) {

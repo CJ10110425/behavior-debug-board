@@ -55,6 +55,8 @@ npm run dev -- --port 3001
 
 Board schema version 3 可把本地 PNG／JPEG／WebP 畫面當成正式 `screen` node，與其他畫面、API、資料庫或權限服務連線。截圖不是 service card 的附件；它本身就是可播放流程的一部分。
 
+Screen frame 不靠猜測：先讀使用者描述與專案的 Layout／平台程式碼，再看實際擷取 viewport 和圖片長寬；高解析直式、平板比例、裁切或 full-page 畫面無法確定時必須詢問使用者。手機畫面採 Figma-like device frame，只保留短標題與一句可編輯說明；桌面網頁與原生桌面 App 分別使用 browser／app frame。
+
 依照 [Board schema](skills/difftale/references/board-schema.md) 建立 JSON，接著執行：
 
 ```bash

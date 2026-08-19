@@ -13,6 +13,7 @@ Guarantee all of the following:
 
 - Represent both `Before` and `After` on one infinite white canvas.
 - Treat an app/web/mobile screenshot as a first-class `screen` node that can connect to user actions and service nodes. Never reduce a screen flow to an attachment inside a service card.
+- Classify every screen as `mobile`, `browser`, or `app` from the strongest available evidence: explicit user statement, project layout/platform code, then screenshot geometry. Ask the user when evidence conflicts or remains ambiguous; never silently default an uncertain screen to desktop web.
 - Give every direction its own edge. Never reuse one geometric line for request and response.
 - Render every edge, arrowhead, and label before playback starts. Playback only highlights an existing edge and moves its packet.
 - Keep every service or screen card title and description directly editable on the canvas, and preserve edits while playback changes card status.
@@ -33,7 +34,7 @@ Guarantee all of the following:
 1. Read [references/local-storage-and-git.md](references/local-storage-and-git.md). If the request does not already state a storage preference, present its Git/local-only choice gate and stop. Do not gather content or write files until the user answers.
 2. Resolve the storage bundle from the answer. In Git mode, create/use a feature branch and preserve unrelated changes. In local-only mode, use the durable per-project directory; never use `/tmp`.
 3. Gather the user-visible Before/After journey, relevant screens, user actions, services, root cause or product intent, and verified result.
-4. When screens matter, read [references/screenshots.md](references/screenshots.md). Capture or copy each required state into `assets/screens/`, then model it as a `kind: "screen"` node. A screen-to-screen navigation and a screen-to-service request are both normal directional edges.
+4. When screens matter, read [references/screenshots.md](references/screenshots.md). Inspect the target project's layout/platform code and capture viewport before classifying the frame. Use screenshot dimensions only after code evidence; ask the user if the result is ambiguous. Capture or copy each required state into `assets/screens/`, then model it as a `kind: "screen"` node. A screen-to-screen navigation and a screen-to-service request are both normal directional edges.
 5. Read [references/board-schema.md](references/board-schema.md), then write `board.json` inside the resolved local bundle.
 6. For named products, read [references/logo-mcp.md](references/logo-mcp.md). Try the Logo MCP first, then search the web for an official brand/media asset and trusted registries. Save trustworthy SVGs under the bundle's `assets/` directory and record their source. If no reliable logo exists, use a category icon; never invent a brand mark.
 7. Run the fast browser QA. This validates the config, copies local assets into the immutable runtime, chooses/reuses a port, waits for React Flow hydration/layout/fit-view, verifies node/edge/label and screenshot counts, opens the selected flow at its final step, and writes a correctly typed screenshot plus JSON report:
@@ -70,7 +71,7 @@ Guarantee all of the following:
 - Use blue for requests/loading, orange for processing/query, green for success/response, and red for failure. Keep the canvas and cards neutral.
 - Use `blocked` for a service that the request never reached; use `running` only for the card processing the active step.
 - Keep logos 24–32px, preserve aspect ratio, and never recolor brand assets.
-- Render browser screenshots in a browser frame, mobile screenshots in a phone frame, and desktop/native app screenshots in an app frame. Preserve readable content and never crop away the changed state.
+- Render browser screenshots in a browser frame, mobile screenshots in a narrow phone frame, and desktop/native app screenshots in an app frame. Mobile is the primary screen presentation: keep only an editable short title and one-line description around the device frame. Preserve readable content and never crop away the changed state.
 
 ## Resources
 

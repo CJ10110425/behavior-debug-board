@@ -26,6 +26,63 @@ function fail(message) {
   throw new Error(message);
 }
 
+function uint24LittleEndian(buffer, offset) {
+  return buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16);
+}
+
+export function readRasterDimensions(buffer) {
+  if (buffer.length >= 24 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20), format: "png" };
+  }
+
+  if (buffer.length >= 4 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    const startOfFrameMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+    while (offset + 4 <= buffer.length) {
+      while (offset < buffer.length && buffer[offset] !== 0xff) offset += 1;
+      while (offset < buffer.length && buffer[offset] === 0xff) offset += 1;
+      const marker = buffer[offset];
+      offset += 1;
+      if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (offset + 2 > buffer.length) break;
+      const segmentLength = buffer.readUInt16BE(offset);
+      if (segmentLength < 2 || offset + segmentLength > buffer.length) break;
+      if (startOfFrameMarkers.has(marker) && segmentLength >= 7) {
+        return { width: buffer.readUInt16BE(offset + 5), height: buffer.readUInt16BE(offset + 3), format: "jpeg" };
+      }
+      offset += segmentLength;
+    }
+  }
+
+  if (buffer.length >= 30 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") {
+    const chunk = buffer.subarray(12, 16).toString("ascii");
+    if (chunk === "VP8X") {
+      return { width: uint24LittleEndian(buffer, 24) + 1, height: uint24LittleEndian(buffer, 27) + 1, format: "webp" };
+    }
+    if (chunk === "VP8 " && buffer.length >= 30 && buffer.subarray(23, 26).equals(Buffer.from([0x9d, 0x01, 0x2a]))) {
+      return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff, format: "webp" };
+    }
+    if (chunk === "VP8L" && buffer.length >= 25 && buffer[20] === 0x2f) {
+      const bits = buffer.readUInt32LE(21);
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1, format: "webp" };
+    }
+  }
+
+  fail("screenshot dimensions could not be read from PNG, JPEG, or WebP data");
+}
+
+export function inferScreenFrame({ width, height }) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) fail("screenshot dimensions must be positive numbers");
+  const ratio = width / height;
+  if (ratio >= 1.2) return { frame: "browser", confidence: "high", reason: `landscape ${width}×${height}` };
+  if (ratio <= 0.9 && width <= 700) return { frame: "mobile", confidence: "high", reason: `portrait ${width}×${height}` };
+  return {
+    frame: undefined,
+    confidence: "ambiguous",
+    reason: `${width}×${height} could be a tablet, high-resolution phone, cropped web page, or desktop full-page capture`,
+  };
+}
+
 function requiredString(value, location) {
   if (typeof value !== "string" || value.trim() === "") fail(`${location} must be a non-empty string`);
 }
@@ -184,7 +241,27 @@ export async function readAndValidateConfig(configPath) {
   } catch (error) {
     fail(`invalid JSON in ${absolutePath}: ${error.message}`);
   }
-  return { config: validateBoardConfig(config), absolutePath };
+  const validated = validateBoardConfig(config);
+  const boardDirectory = dirname(absolutePath);
+  for (const flow of validated.flows) {
+    for (const node of flow.nodes.filter((candidate) => candidate.kind === "screen")) {
+      const screenshotPath = resolve(boardDirectory, node.screenshot);
+      let dimensions;
+      try {
+        dimensions = readRasterDimensions(await readFile(screenshotPath));
+      } catch (error) {
+        fail(`flows.${flow.id}.nodes.${node.id}.screenshot cannot be inspected: ${error.message}`);
+      }
+      if (!node.frame) {
+        const inferred = inferScreenFrame(dimensions);
+        if (!inferred.frame) {
+          fail(`flows.${flow.id}.nodes.${node.id}.frame needs user confirmation: ${inferred.reason}; ask whether this is mobile, browser, or app and set frame explicitly`);
+        }
+        node.frame = inferred.frame;
+      }
+    }
+  }
+  return { config: validated, absolutePath };
 }
 
 export async function prepareBoard({ configPath, outputPath }) {

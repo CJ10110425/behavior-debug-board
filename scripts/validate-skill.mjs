@@ -60,6 +60,7 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/semantic|semantically/i.test(skill) && /restore/i.test(skill), "skill must document semantic version diff and restore");
   assert(/version-history\.md/.test(skill), "skill must route version requests to the version-history reference");
   assert(/kind: `screen`|`kind: "screen"`/.test(skill) && /screenshots\.md/.test(skill), "skill must model screenshots as first-class screen nodes");
+  assert(/project layout\/platform code/.test(skill) && /Ask the user when evidence conflicts/.test(skill), "skill must inspect layout code and confirm ambiguous screen frames");
   assert(/value: "thesvg"/.test(manifest), "agents/openai.yaml must declare the Logo MCP dependency");
   assert(/allow_implicit_invocation: true/.test(manifest), "skill must allow implicit routing");
   assert(/difftale/.test(resolver) && /畫面/.test(resolver) && /本地端動態 Board/.test(resolver), "resolver entry is missing");
