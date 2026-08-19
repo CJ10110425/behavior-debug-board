@@ -178,6 +178,10 @@ function useUiText() {
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
 const renderProtocol = "5";
 const serviceNodeWidth = 226;
+const playbackNodeWidth = 720;
+const playbackNodeHeight = 126;
+const framePaddingX = 64;
+const framePaddingY = 12;
 const browserScreenNodeWidth = 380;
 const mobileScreenNodeWidth = 230;
 const minimumNodeGap = 84;
@@ -381,8 +385,8 @@ function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
             />
           </div>
           <div className="debug-node__detail">
-            {data.changed ? <span className="changed-badge">{text("Changed here", "修改位置")}</span> : null}
-            <span>{data.detail}</span>
+            {data.changed ? <span className="changed-badge">{text("Changed", "已修改")}</span> : null}
+            <span className="debug-node__detail-text nodrag nopan">{data.detail}</span>
           </div>
         </>
       )}
@@ -743,10 +747,38 @@ function flowGeometry(flow: BoardFlowConfig) {
   const fanout = singleSourceFanout(flow);
   const finalNode = flow.nodes.at(-1)!;
   const maxNodeHeight = Math.max(...flow.nodes.map(nodeHeight));
-  const groupWidth = fanout ? 1040 : Math.max(1000, nodePositions.at(-1)! + nodeWidth(finalNode) + 64);
+  const derivedWidth = fanout ? 1040 : Math.max(1000, nodePositions.at(-1)! + nodeWidth(finalNode) + framePaddingX);
   const playbackY = fanout ? 390 : 78 + maxNodeHeight + 48;
-  const groupHeight = fanout ? 535 : playbackY + 138;
-  return { fanout, groupHeight, groupWidth, nodePositions, playbackY };
+
+  const servicePositions = flow.nodes.map((node, index) => {
+    if (node.position) return node.position;
+    if (!fanout) return { x: nodePositions[index], y: 78 };
+    if (node.id === fanout.source) return { x: 90, y: 143 };
+    return { x: 700, y: fanout.targets.indexOf(node.id) === 0 ? 68 : 218 };
+  });
+  const playbackPosition = flow.playbackPosition
+    ?? { x: Math.max(0, (derivedWidth - playbackNodeWidth) / 2), y: playbackY };
+
+  // Size the frame from what is actually placed, so a persisted layout can never sit outside it.
+  // Free canvas items are excluded on purpose: they belong to the canvas, not to a flow.
+  const contentRight = Math.max(
+    playbackPosition.x + playbackNodeWidth,
+    ...servicePositions.map((position, index) => position.x + nodeWidth(flow.nodes[index])),
+  );
+  const contentBottom = Math.max(
+    playbackPosition.y + playbackNodeHeight,
+    ...servicePositions.map((position, index) => position.y + nodeHeight(flow.nodes[index])),
+  );
+
+  return {
+    fanout,
+    groupHeight: Math.round(contentBottom + framePaddingY),
+    groupWidth: Math.round(contentRight + framePaddingX),
+    nodePositions,
+    playbackPosition,
+    playbackY,
+    servicePositions,
+  };
 }
 
 function stackedFlowPositions(flowConfigByMode: FlowConfigByMode) {
@@ -764,16 +796,7 @@ function stackedFlowPositions(flowConfigByMode: FlowConfigByMode) {
 function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions, assetBase?: string): CanvasNode[] {
   const flow = flowConfigByMode[mode];
   const groupId = `${mode}-group`;
-  const { fanout, groupHeight, groupWidth, nodePositions, playbackY } = flowGeometry(flow);
-
-  const servicePosition = (nodeId: string, index: number) => {
-    const persisted = flow.nodes.find((node) => node.id === nodeId)?.position;
-    if (persisted) return persisted;
-    if (!fanout) return { x: nodePositions[index], y: 78 };
-    if (nodeId === fanout.source) return { x: 90, y: 143 };
-    const targetIndex = fanout.targets.indexOf(nodeId);
-    return { x: 700, y: targetIndex === 0 ? 68 : 218 };
-  };
+  const { groupHeight, groupWidth, playbackPosition, servicePositions } = flowGeometry(flow);
 
   return [
     {
@@ -797,7 +820,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     ...flow.nodes.map((node, index) => ({
       id: `${mode}-${node.id}`,
       type: "debugNode" as const,
-      position: servicePosition(node.id, index),
+      position: servicePositions[index],
       parentId: groupId,
       data: debugData(flowConfigByMode, mode, node.id, runtime, assetBase),
       draggable: true,
@@ -805,7 +828,7 @@ function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition
     {
       id: `${mode}-playback`,
       type: "playbackNode",
-      position: flow.playbackPosition ?? { x: (groupWidth - 720) / 2, y: playbackY },
+      position: playbackPosition,
       parentId: groupId,
       data: playbackData(flowConfigByMode, mode, runtime, actions),
       draggable: true,
