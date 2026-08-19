@@ -1,5 +1,7 @@
 # Difftale
 
+![Difftale turns code diffs into replayable Before and After behavior flows](docs/assets/difftale-behavior-diff.png)
+
 **English** · [繁體中文](README.zh-TW.md)
 
 Difftale turns text diffs into visual behavior stories: one local whiteboard shows Before and After flows, app/web/mobile screen captures, service nodes, one-way request and response edges, runtime states, and replayable user journeys.
