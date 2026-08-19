@@ -7,9 +7,9 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const launcher = resolve(repoRoot, "skills/behavior-debug-board/scripts/behavior-debug-board.mjs");
-const versionCli = resolve(repoRoot, "skills/behavior-debug-board/scripts/board-version.mjs");
-const configPath = resolve(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
+const launcher = resolve(repoRoot, "skills/difftale/scripts/difftale.mjs");
+const versionCli = resolve(repoRoot, "skills/difftale/scripts/board-version.mjs");
+const configPath = resolve(repoRoot, "skills/difftale/assets/example-board.json");
 
 async function availablePort() {
   const server = createServer();
@@ -81,7 +81,7 @@ const portIndex = process.argv.indexOf("--port");
 const port = Number(process.argv[portIndex + 1]);
 const server = createServer((_request, response) => {
   response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  response.end("<!doctype html><title>Behavior Debug Board · Local</title>");
+  response.end("<!doctype html><title>Difftale · Local</title>");
 });
 server.listen(port);
 const stop = () => server.close(() => process.exit(0));
@@ -138,14 +138,14 @@ process.once("SIGTERM", stop);
   assert.match(output, /BOARD_OPENED pending-codex-browser/);
 });
 
-test("launch reuses an existing local Behavior Debug Board", async (context) => {
+test("launch reuses an existing local Difftale board", async (context) => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "behavior-board-reuse-"));
   context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   await writeFile(join(temporaryRoot, "package.json"), '{"name":"reuse-fixture","private":true}\n');
   const outputPath = join(temporaryRoot, "board.json");
   const httpServer = (await import("node:http")).createServer((_request, response) => {
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end("<!doctype html><title>Behavior Debug Board · Local</title>");
+    response.end("<!doctype html><title>Difftale · Local</title>");
   });
   context.after(() => new Promise((resolvePromise) => httpServer.close(resolvePromise)));
   await new Promise((resolvePromise, rejectPromise) => {

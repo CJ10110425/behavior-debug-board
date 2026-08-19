@@ -1,10 +1,10 @@
 # Board JSON schema
 
-The renderer accepts version `1` fixtures and saves editable boards as version `2`. A board contains exactly two flows: `before` and `after`.
+The renderer accepts versions `1` and `2` for service-only Boards. Version `3` adds screenshot screen nodes and remains compatible with persisted canvas data. A board contains exactly two flows: `before` and `after`.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "title": "Profile permission failure",
   "flows": [
     {
@@ -46,16 +46,37 @@ The renderer accepts version `1` fixtures and saves editable boards as version `
 }
 ```
 
-- `kind`: `client`, `rules`, `database`, or `service`.
+- `kind`: `client`, `rules`, `database`, `service`, or `screen`.
 - `logo`: optional board-local `assets/*.svg` path. Bundled `/logos/*.svg` paths remain supported for legacy fixtures. Never hotlink runtime logos.
 - `categoryIcon`: use only when no trustworthy brand logo can be found. Valid values are `web-app`, `mobile-app`, `api`, `database`, `auth`, `storage`, `compute`, `payment`, `analytics`, `messaging`, `network`, `security`, `cloud`, `queue`, `webhook`, `ai`, and `service`.
 - Set either `logo` or `categoryIcon`, never both. When both are omitted, the renderer derives a generic icon from `kind`.
 - `changed`: mark the behavior-changing service in the After flow.
-- Use 2–5 unique nodes per flow.
+- Use 2–5 unique visual nodes per flow.
+
+### Screenshot screen node
+
+```json
+{
+  "id": "dashboard",
+  "title": "任務大廳",
+  "subtitle": "登入後看見可加入的世界",
+  "detail": "新的主要入口",
+  "kind": "screen",
+  "screenshot": "assets/screens/after-dashboard-a82f61c2.png",
+  "frame": "browser",
+  "route": "/zh-tw/",
+  "changed": true
+}
+```
+
+- Screen nodes require Board version `3` and a board-local PNG, JPEG, or WebP screenshot.
+- `frame` may be `browser`, `mobile`, or `app`.
+- Screen nodes do not use `logo` or `categoryIcon`.
+- Treat screenshot paths as immutable. Write a new filename when the captured pixels change.
 
 ## Canvas persistence
 
-Version 2 may persist free canvas items and user-created edges:
+Versions 2 and 3 may persist free canvas items and user-created edges:
 
 ```json
 {
@@ -112,7 +133,7 @@ Every step must provide a status for every node. Valid statuses: `idle`, `runnin
 ## Validation
 
 ```bash
-node skills/behavior-debug-board/scripts/behavior-debug-board.mjs validate --config /absolute/path/board.json
+node skills/difftale/scripts/difftale.mjs validate --config /absolute/path/board.json
 ```
 
 The validator rejects unknown nodes, duplicate directional routes, missing statuses, invalid active-step indices, external logo URLs, self-links, and malformed Before/After structure.

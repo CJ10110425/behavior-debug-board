@@ -6,11 +6,11 @@ import test from "node:test";
 import { validateSkill } from "../scripts/validate-skill.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const skillRoot = resolve(repoRoot, "skills/behavior-debug-board");
+const skillRoot = resolve(repoRoot, "skills/difftale");
 
 test("skill package has the required contract, resources, resolver, and Logo MCP", async () => {
   const result = await validateSkill(skillRoot);
-  assert.equal(result.files, 16);
+  assert.equal(result.files, 17);
   assert.equal(result.categoryIcons, 17);
 });
 
@@ -24,6 +24,7 @@ test("routing eval covers real positive and negative user language", async () =>
   assert.ok(cases.some((entry) => /before.*after/i.test(entry.prompt)));
   assert.ok(cases.some((entry) => /回傳|response/i.test(entry.prompt)));
   assert.ok(cases.some((entry) => /上一版|版本/.test(entry.prompt) && /比較|恢復/.test(entry.prompt)));
+  assert.ok(cases.some((entry) => /App.*截圖|畫面.*操作路徑/i.test(entry.prompt)));
 });
 
 test("LLM quality evals require behavior synthesis and an opened local board", async () => {
@@ -41,6 +42,10 @@ test("LLM quality evals require behavior synthesis and an opened local board", a
       assert.ok(entry.expected.some((expectation) => /新增.*移除.*修改.*移動/.test(expectation)));
       assert.ok(entry.expected.some((expectation) => /自動備份/.test(expectation)));
       continue;
+    }
+    if (entry.name === "app-screen-flow") {
+      assert.ok(entry.expected.some((expectation) => /kind screen/.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /assets\/screens/.test(expectation)));
     }
     assert.ok(entry.expected.some((expectation) => /localhost|本地端 Board/i.test(expectation)));
     assert.ok(entry.expected.some((expectation) => /Before.*After|behavior/i.test(expectation)));

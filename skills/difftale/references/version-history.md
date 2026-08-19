@@ -44,7 +44,7 @@ npm run board:version -- restore \
 ### Git mode
 
 - Each named version is a normal local Git commit.
-- Stage and commit only `.behavior-debug-board/boards/<slug>/`.
+- Stage and commit only `.difftale/boards/<slug>/`; accept `.behavior-debug-board/boards/<slug>/` only for legacy bundles.
 - Preserve unrelated staged and unstaged work.
 - Never push or open a PR without a separate explicit request.
 - Restoring a Git revision writes its Board document into the working tree and leaves it uncommitted for review.
@@ -59,7 +59,9 @@ Store immutable snapshots next to the Board source:
 ├── assets/
 └── .versions/
     ├── index.json
-    └── <timestamp>-<sha256-prefix>.json
+    └── <timestamp>-<sha256-prefix>/
+        ├── board.json
+        └── assets/
 ```
 
 Before a restore, automatically snapshot the current Board as `還原前自動備份`.
@@ -68,9 +70,9 @@ Before a restore, automatically snapshot the current Board as `還原前自動�
 
 Report behavior-level meaning rather than JSON line changes:
 
-- `added`: service cards, directional edges, canvas objects, or custom connections were added;
+- `added`: screens, service cards, directional edges, canvas objects, or custom connections were added;
 - `removed`: those entities were removed;
-- `changed`: copy, direction, semantics, playback steps, statuses, or other behavior changed;
+- `changed`: screenshots, screen routes, copy, direction, semantics, playback steps, statuses, or other behavior changed;
 - `moved`: only layout position changed.
 
 Keep content changes and movement separate even when both affect the same Card. Show concise labels and details; do not expose the raw JSON patch unless requested.

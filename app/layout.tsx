@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Behavior Debug Board · Local",
+  title: "Difftale · Local",
   description: "A local visual replay of a debugging problem and its verified behavior change.",
   icons: {
     icon: "/favicon.svg",

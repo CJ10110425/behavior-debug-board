@@ -1,11 +1,6 @@
 interface:
-  display_name: "Behavior Debug Board"
-  short_description: "Create, diff, restore, and Git-version local behavior boards"
-  default_prompt: "Use $behavior-debug-board to save this bug locally, ask about Git, and preserve semantic version history I can compare or restore."
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "thesvg"
-      description: "Search and fetch exact brand or service SVG logos"
+  display_name: "Behavior Debug Board (legacy)"
+  short_description: "Legacy alias that routes existing prompts to Difftale"
+  default_prompt: "Use $behavior-debug-board as the legacy alias and continue this request with the Difftale workflow."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

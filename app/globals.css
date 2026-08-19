@@ -461,6 +461,9 @@ textarea:focus-visible {
   transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
 }
 
+.debug-node--screen { width: 340px; }
+.debug-node--screen:has(.screen-preview--mobile) { width: 240px; }
+
 .debug-node--running {
   border-color: var(--action);
   box-shadow: 0 0 0 3px rgb(37 99 235 / 0.08), 2px 3px 0 rgb(32 36 40 / 0.06);
@@ -507,6 +510,87 @@ textarea:focus-visible {
   width: 23px;
   height: 23px;
   object-fit: contain;
+}
+
+.screen-preview {
+  position: relative;
+  margin: 0 12px 11px;
+  overflow: hidden;
+  border: 1px solid #bcc2c6;
+  border-radius: 6px;
+  background: #f4f5f3;
+  box-shadow: 0 1px 0 rgb(32 36 40 / 0.06);
+}
+
+.screen-preview__chrome {
+  display: grid;
+  height: 24px;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+  padding: 0 7px;
+  border-bottom: 1px solid #d8dcde;
+  color: #687078;
+  background: #f7f8f6;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  text-align: center;
+}
+
+.screen-preview__chrome > span:last-child {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-preview__dots {
+  display: flex;
+  grid-column: 1;
+  gap: 3px;
+}
+
+.screen-preview__dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #a9afb3;
+}
+
+.screen-preview__image {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  object-position: top center;
+  background: var(--white);
+  user-select: none;
+}
+
+.screen-preview--mobile {
+  width: 184px;
+  margin-right: auto;
+  margin-left: auto;
+  padding-top: 13px;
+  border-width: 2px;
+  border-color: #596067;
+  border-radius: 18px;
+  background: #262b2f;
+}
+
+.screen-preview--mobile .screen-preview__image {
+  aspect-ratio: 9 / 16;
+  border-radius: 0 0 14px 14px;
+}
+
+.screen-preview__speaker {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 30px;
+  height: 3px;
+  border-radius: 3px;
+  background: #757c82;
+  transform: translateX(-50%);
 }
 
 .client-window-icon {

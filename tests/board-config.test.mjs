@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { prepareBoard, prepareRuntimeBoard, validateBoardConfig } from "../skills/behavior-debug-board/scripts/behavior-debug-board.mjs";
+import { prepareBoard, prepareRuntimeBoard, validateBoardConfig } from "../skills/difftale/scripts/difftale.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const defaultConfigPath = resolve(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
+const defaultConfigPath = resolve(repoRoot, "skills/difftale/assets/example-board.json");
 const defaultConfig = JSON.parse(await readFile(defaultConfigPath, "utf8"));
-const fanoutConfigPath = resolve(repoRoot, "skills/behavior-debug-board/assets/fanout-board.json");
+const fanoutConfigPath = resolve(repoRoot, "skills/difftale/assets/fanout-board.json");
 const fanoutConfig = JSON.parse(await readFile(fanoutConfigPath, "utf8"));
 
 function cloneConfig() {
@@ -32,12 +32,12 @@ test("accepts the bundled single-source fan-out behavior board", () => {
   assert.equal(validateBoardConfig(structuredClone(fanoutConfig)).title, fanoutConfig.title);
 });
 
-rejectsMutation("requires a supported config version", (config) => { config.version = 3; }, /version must be 1 or 2/);
+rejectsMutation("requires a supported config version", (config) => { config.version = 4; }, /version must be 1, 2, or 3/);
 rejectsMutation("requires exact Before and After flows", (config) => { config.flows[1].id = "during"; }, /unique ids: before and after/);
 rejectsMutation("requires matching outcomes", (config) => { config.flows[0].outcome = "success"; }, /outcome must be error/);
-rejectsMutation("limits a flow to five nodes", (config) => { config.flows[0].nodes = [config.flows[0].nodes[0]]; }, /2–5 service nodes/);
+rejectsMutation("limits a flow to five nodes", (config) => { config.flows[0].nodes = [config.flows[0].nodes[0]]; }, /2–5 visual nodes/);
 rejectsMutation("rejects duplicate node ids", (config) => { config.flows[0].nodes[1].id = config.flows[0].nodes[0].id; }, /duplicate node id/);
-rejectsMutation("rejects invalid node kinds", (config) => { config.flows[0].nodes[0].kind = "screen"; }, /kind is invalid/);
+rejectsMutation("rejects invalid node kinds", (config) => { config.flows[0].nodes[0].kind = "cache"; }, /kind is invalid/);
 rejectsMutation("rejects remote and traversing logo paths", (config) => { config.flows[0].nodes[1].logo = "/logos/../secret.svg"; }, /\/logos\/\*\.svg or a board-local assets\/\*\.svg path/);
 rejectsMutation("rejects unknown category icons", (config) => { config.flows[0].nodes[0].categoryIcon = "brand-ish"; }, /categoryIcon is invalid/);
 rejectsMutation("rejects ambiguous logo and category icon", (config) => { config.flows[0].nodes.find((node) => node.logo).categoryIcon = "security"; }, /either logo or categoryIcon/);
@@ -49,6 +49,33 @@ rejectsMutation("rejects duplicate active steps", (config) => { config.flows[1].
 rejectsMutation("rejects active steps outside the timeline", (config) => { config.flows[1].edges[0].activeSteps = [99]; }, /invalid active step/);
 rejectsMutation("requires a status for every node", (config) => { delete config.flows[0].steps[0].nodeStatuses[config.flows[0].nodes[0].id]; }, /missing or invalid/);
 rejectsMutation("rejects statuses for unknown nodes", (config) => { config.flows[0].steps[0].nodeStatuses.ghost = "idle"; }, /unknown node/);
+
+test("accepts version 3 screenshot screen nodes", () => {
+  const config = cloneConfig();
+  config.version = 3;
+  const screen = config.flows[0].nodes[0];
+  screen.kind = "screen";
+  screen.screenshot = "assets/screens/before-login-a1b2c3d4.png";
+  screen.frame = "browser";
+  screen.route = "/login";
+  delete screen.categoryIcon;
+  assert.equal(validateBoardConfig(config).flows[0].nodes[0].kind, "screen");
+});
+
+rejectsMutation("requires local raster assets for screen nodes", (config) => {
+  config.version = 3;
+  const screen = config.flows[0].nodes[0];
+  screen.kind = "screen";
+  screen.screenshot = "https://example.com/login.png";
+  delete screen.categoryIcon;
+}, /board-local assets\/\*\.png/);
+
+rejectsMutation("requires version 3 for screen nodes", (config) => {
+  const screen = config.flows[0].nodes[0];
+  screen.kind = "screen";
+  screen.screenshot = "assets/screens/login.png";
+  delete screen.categoryIcon;
+}, /require board config version 3/);
 
 test("accepts version 2 persisted layout and canvas items", () => {
   const config = cloneConfig();
@@ -63,9 +90,9 @@ test("accepts version 2 persisted layout and canvas items", () => {
   assert.equal(validateBoardConfig(config).version, 2);
 });
 
-rejectsMutation("requires version 2 for persisted canvas data", (config) => {
+rejectsMutation("requires version 2 or 3 for persisted canvas data", (config) => {
   config.canvas = { items: [], edges: [] };
-}, /requires board config version 2/);
+}, /requires board config version 2 or 3/);
 
 rejectsMutation("rejects invalid persisted node positions", (config) => {
   config.flows[0].nodes[0].position = { x: "left", y: 10 };
@@ -112,4 +139,27 @@ test("runtime preparation copies board-local logo assets without changing canoni
   const copied = await readFile(join(runtimeRoot, "public", "runtime", "assets", result.configHash, "acme.svg"), "utf8");
   assert.match(copied, /<svg/);
   assert.equal(JSON.parse(await readFile(result.runtimePath, "utf8")).flows[0].nodes[1].logo, "assets/acme.svg");
+});
+
+test("runtime preparation copies board-local screenshot assets", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "difftale-screen-assets-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const boardDirectory = join(temporaryRoot, "board");
+  const runtimeRoot = join(temporaryRoot, "renderer");
+  await mkdir(join(boardDirectory, "assets", "screens"), { recursive: true });
+  const config = cloneConfig();
+  config.version = 3;
+  const screen = config.flows[0].nodes[0];
+  screen.kind = "screen";
+  screen.screenshot = "assets/screens/login-deadbeef.png";
+  screen.frame = "browser";
+  delete screen.categoryIcon;
+  const configPath = join(boardDirectory, "board.json");
+  const screenshot = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  await writeFile(join(boardDirectory, screen.screenshot), screenshot);
+
+  const result = await prepareRuntimeBoard({ configPath, repoRoot: runtimeRoot });
+  const copied = await readFile(join(runtimeRoot, "public", "runtime", "assets", result.configHash, "screens", "login-deadbeef.png"));
+  assert.deepEqual(copied, screenshot);
 });

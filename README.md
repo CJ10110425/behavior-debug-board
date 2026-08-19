@@ -1,11 +1,11 @@
-# Behavior Debug Board
+# Difftale
 
-把「文字 diff」轉成使用者看得懂的 behavior diff：同一張白色畫布上呈現 Before / After、服務節點、獨立方向的請求與回傳線、處理狀態，以及可播放的問題重現流程。
+把「文字 diff」轉成使用者看得懂的 visual behavior diff：同一張白色畫布上呈現 Before / After、App／Web／Mobile 畫面截圖、服務節點、獨立方向線、處理狀態，以及可播放的使用者流程。
 
 這個專案同時包含：
 
 - 一個 React Flow 本地端 Board。
-- 一個可由 Codex / agent 呼叫的 `behavior-debug-board` skill。
+- 一個可由 Codex / agent 呼叫的 `difftale` skill。
 - 一份 Firebase Rules 權限錯誤的可播放範例。
 - Logo MCP 的解析規則與離線 SVG fallback。
 
@@ -38,20 +38,24 @@ npm run board
 npm run dev -- --port 3001
 ```
 
-## 用自己的 debug 案例
+## 用自己的畫面與 flow
 
 所有 Board 都應先存成本機 bundle。要和程式一起版控時，建議放在：
 
 ```text
-.behavior-debug-board/boards/<slug>/
+.difftale/boards/<slug>/
 ├── board.json
 └── assets/
-    └── <brand>.svg
+    ├── <brand>.svg
+    └── screens/
+        └── <state>-<hash>.png
 ```
 
-只存本機、不使用 Git 時，使用 `~/.behavior-debug-board/projects/<project-id>/boards/<slug>/`。Git 選項只代表本機 branch／commit；除非使用者另外要求，skill 不會 push 或建立 PR。
+只存本機、不使用 Git 時，使用 `~/.difftale/projects/<project-id>/boards/<slug>/`。Git 選項只代表本機 branch／commit；除非使用者另外要求，skill 不會 push 或建立 PR。舊的 `.behavior-debug-board` bundle 仍可讀取。
 
-依照 [Board schema](skills/behavior-debug-board/references/board-schema.md) 建立 JSON，接著執行：
+Board schema version 3 可把本地 PNG／JPEG／WebP 畫面當成正式 `screen` node，與其他畫面、API、資料庫或權限服務連線。截圖不是 service card 的附件；它本身就是可播放流程的一部分。
+
+依照 [Board schema](skills/difftale/references/board-schema.md) 建立 JSON，接著執行：
 
 ```bash
 npm run board -- --config /absolute/path/to/board.json --port 3001
@@ -109,20 +113,20 @@ npm run board:version -- diff --config /absolute/path/to/board.json --storage lo
 npm run board:version -- restore --config /absolute/path/to/board.json --storage local --revision local:<revision-id>
 ```
 
-Git 模式的命名版本是正常的本機 commit，而且只會包含 `.behavior-debug-board/boards/<slug>/`。其他 staged／unstaged 檔案會保留；Push 和 PR 仍需要另一個明確指令。
+Git 模式的命名版本是正常的本機 commit，而且只會包含 `.difftale/boards/<slug>/`。其他 staged／unstaged 檔案會保留；Push 和 PR 仍需要另一個明確指令。本機版本會一起保存 `board.json` 與引用的畫面／logo 資產。
 
 ## 安裝成 Codex skill
 
 從 repo 根目錄建立連結，讓 skill 的原始碼仍由 Git 追蹤：
 
 ```bash
-ln -s "$PWD/skills/behavior-debug-board" "$HOME/.codex/skills/behavior-debug-board"
+ln -s "$PWD/skills/difftale" "$HOME/.codex/skills/difftale"
 ```
 
 重新開啟 Codex 後可直接說：
 
 ```text
-Use $behavior-debug-board to turn this Firebase permission bug into a local before/after board.
+Use $difftale to show what changed across these app screens and service flows in a local Before/After Board.
 ```
 
 Skill 啟動後會先詢問「Git 版控」或「只存本機」，並在收到選擇前停止。兩種模式都會保留完整本地 bundle。完成條件包含實際打開本地端 Board；如果 agent 只回傳 JSON、Markdown 或靜態圖，工作尚未完成。
@@ -142,12 +146,12 @@ Skill 啟動後會先詢問「Git 版控」或「只存本機」，並在收到�
 }
 ```
 
-Firebase 與 Cloud Firestore SVG 已附在 `public/logos/` 與 skill 的 `assets/logos/`，所以 demo 可離線顯示。找不到 MCP logo 時，skill 會再搜尋官方品牌頁與可信 registry；仍找不到可靠資產才依服務用途使用 Lucide category icon，絕不生成假的品牌 logo。來源、授權與商標注意事項見 [logo-sources.md](skills/behavior-debug-board/references/logo-sources.md) 與 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Firebase 與 Cloud Firestore SVG 已附在 `public/logos/` 與 skill 的 `assets/logos/`，所以 demo 可離線顯示。找不到 MCP logo 時，skill 會再搜尋官方品牌頁與可信 registry；仍找不到可靠資產才依服務用途使用 Lucide category icon，絕不生成假的品牌 logo。來源、授權與商標注意事項見 [logo-sources.md](skills/difftale/references/logo-sources.md) 與 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 繪製技術
 
 - 畫布、拖曳、縮放、Fit view：React Flow / XYFlow。
-- 線路：`getStraightPath`，請求與回傳各自有獨立 edge。
+- 線路：線性流程使用 `getStraightPath`、分叉使用低曲率 `getBezierPath`；每個方向各自有獨立 edge。
 - 資料封包動畫：原生 SVG `<animateMotion>`。
 - Loading：服務卡片內 CSS spinner。
 - 工具 icon：Lucide SVG。
