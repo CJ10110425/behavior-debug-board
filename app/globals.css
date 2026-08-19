@@ -812,6 +812,12 @@ textarea:focus-visible {
   font-size: 8px;
 }
 
+.debug-node__detail-text {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
 .changed-badge {
   flex: 0 0 auto;
   padding: 3px 5px;
