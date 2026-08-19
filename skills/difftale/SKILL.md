@@ -25,19 +25,22 @@ Guarantee all of the following:
 - Describe behavior, cause, and user-visible result. Do not expose commit hashes or code diffs unless requested.
 - Preserve official brand colors and store fetched SVGs locally for offline use.
 - Store screenshots as immutable board-local PNG, JPEG, or WebP assets. Use a new filename when the pixels change so semantic revision history can identify the changed screen.
+- Keep the reusable skill package generic. Never copy a user's product, company, repository, branch, source filename/path, raw code/log, private URL, identifier, or screenshot into `skills/difftale/`, renderer fixtures, tests, or public documentation. Keep user-specific evidence only in the selected local Board bundle.
+- Default Board copy to role-based names and behavioral summaries. Mention a user's own product name, source filename, or raw implementation detail only when the user explicitly asks; verified third-party service names and logos are allowed when they materially explain the flow.
 - Load each generated board from an immutable SHA-256 runtime URL; never overwrite a tracked app fixture.
 - Treat `BOARD_SERVER_READY` as transport readiness only. Completion requires `BOARD_RENDERED` and `BOARD_QA_PASS` from browser QA.
+- Open and hand off the exact `BOARD_URL` printed by the launcher, including `config`, `save`, and `saveToken`. Never reconstruct, shorten, or strip its query parameters; a config-only URL is read-only and must show a blocking warning.
 - Start localhost, wait for a healthy response, and open the board for the user. Producing JSON without opening the board is incomplete.
 
 ## Workflow
 
 1. Read [references/local-storage-and-git.md](references/local-storage-and-git.md). If the request does not already state a storage preference, present its Git/local-only choice gate and stop. Do not gather content or write files until the user answers.
 2. Resolve the storage bundle from the answer. In Git mode, create/use a feature branch and preserve unrelated changes. In local-only mode, use the durable per-project directory; never use `/tmp`.
-3. Gather the user-visible Before/After journey, relevant screens, user actions, services, root cause or product intent, and verified result.
+3. Gather the user-visible Before/After journey, relevant screens, user actions, services, root cause or product intent, and verified result. Treat inspected project code, filenames, logs, identifiers, and private URLs as ephemeral evidence: translate them into roles and behavior instead of copying them into the Board or skill package.
 4. When screens matter, read [references/screenshots.md](references/screenshots.md). Inspect the target project's layout/platform code and capture viewport before classifying the frame. Use screenshot dimensions only after code evidence; ask the user if the result is ambiguous. Capture or copy each required state into `assets/screens/`, then model it as a `kind: "screen"` node. A screen-to-screen navigation and a screen-to-service request are both normal directional edges.
 5. Read [references/board-schema.md](references/board-schema.md), then write `board.json` inside the resolved local bundle.
 6. For named products, read [references/logo-mcp.md](references/logo-mcp.md). Try the Logo MCP first, then search the web for an official brand/media asset and trusted registries. Save trustworthy SVGs under the bundle's `assets/` directory and record their source. If no reliable logo exists, use a category icon; never invent a brand mark.
-7. Run the fast browser QA. This validates the config, copies local assets into the immutable runtime, chooses/reuses a port, waits for React Flow hydration/layout/fit-view, verifies node/edge/label and screenshot counts, opens the selected flow at its final step, and writes a correctly typed screenshot plus JSON report:
+7. Before renderer QA, verify Node.js `>=22.13.0`; if the shell is older, use the Codex bundled runtime, nvm, Volta, or another installed compatible Node. Then run the fast browser QA. The CLI also fails early with an actionable version error before starting the renderer. QA validates the config, copies local assets into the immutable runtime, chooses/reuses a port, waits for React Flow hydration/layout/fit-view, verifies node/edge/label and screenshot counts, opens the selected flow at its final step, and writes a correctly typed screenshot plus JSON report:
 
    ```bash
    node skills/difftale/scripts/difftale.mjs qa \
@@ -58,9 +61,9 @@ Guarantee all of the following:
      --port auto
    ```
 
-10. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_SERVER_READY`, then open the printed hash-addressed `BOARD_URL` in that browser. Otherwise let the launcher open the system browser.
+10. If a Codex in-app browser tool is available, pass `--no-open`, wait for `BOARD_SERVER_READY`, then open the launcher output's complete `BOARD_URL` verbatim in that browser. Preserve the `config`, `save`, and `saveToken` query parameters. Otherwise let the launcher open the system browser.
 11. When the user asks to save a version, compare, list history, or restore, read [references/version-history.md](references/version-history.md) and use the bundled version script. A named Git version is a local commit of only the Board bundle; a named local-only version is an immutable `.versions/` snapshot including referenced assets.
-12. In Git mode, re-run QA before the final named version, inspect `git status` and the exact Board diff, and preserve unrelated staged or unstaged changes. Do not push without a separate explicit request.
+12. In Git mode, re-run QA before the final named version, force-save the Board, wait for `data-save-state="saved"`, and verify the Board source hash remains unchanged across the auto-save settling window before committing. Inspect `git status` and the exact Board diff, and preserve unrelated staged or unstaged changes. If the source changes after a commit, re-run QA before amending. Do not push without a separate explicit request.
 13. Report the local source path, storage mode, revision ID when created or restored, Git branch/status when applicable, QA report, and screenshot. A screenshot captured before `data-board-ready="true"` is invalid.
 
 ## Diagram Rules

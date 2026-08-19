@@ -71,10 +71,18 @@ async function gitState(configPath) {
   }
 }
 
-export async function startBoardSaveServer({ configPath, token, port = 0, storageMode = "local" }) {
+export async function startBoardSaveServer({ configPath, token, port = 0, storageMode = "local", idleTimeoutMs = 30 * 60 * 1_000 }) {
   const absoluteConfigPath = resolve(configPath);
   if (typeof token !== "string" || token.length < 32) throw new Error("save server requires a strong session token");
   if (!["git", "local"].includes(storageMode)) throw new Error("storageMode must be git or local");
+  if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs < 100) throw new Error("idleTimeoutMs must be at least 100ms");
+
+  let idleTimer;
+  const touch = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => server.close(), idleTimeoutMs);
+    idleTimer.unref();
+  };
 
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin ?? "";
@@ -85,6 +93,7 @@ export async function startBoardSaveServer({ configPath, token, port = 0, storag
 
     const suppliedToken = request.headers["x-board-token"];
     if (suppliedToken !== token) return sendJson(response, 401, { error: "invalid save session" }, origin);
+    touch();
 
     if (request.method === "GET" && request.url === "/health") {
       try {
@@ -181,10 +190,16 @@ export async function startBoardSaveServer({ configPath, token, port = 0, storag
   });
   const address = server.address();
   const resolvedPort = typeof address === "object" && address ? address.port : 0;
+  const closed = new Promise((resolvePromise) => server.once("close", resolvePromise));
+  touch();
   return {
     origin: `http://127.0.0.1:${resolvedPort}`,
     port: resolvedPort,
-    close: () => new Promise((resolvePromise) => server.close(resolvePromise)),
+    closed,
+    close: () => {
+      clearTimeout(idleTimer);
+      return new Promise((resolvePromise) => server.close(resolvePromise));
+    },
   };
 }
 
@@ -193,21 +208,16 @@ async function main() {
   const token = process.env.BOARD_SAVE_TOKEN;
   const port = Number(process.env.BOARD_SAVE_PORT ?? "0");
   const storageMode = process.env.BOARD_STORAGE_MODE ?? "local";
+  const idleTimeoutMs = Number(process.env.BOARD_SAVE_IDLE_MS ?? String(30 * 60 * 1_000));
   if (!configPath || !token) throw new Error("BOARD_SAVE_CONFIG and BOARD_SAVE_TOKEN are required");
-  const server = await startBoardSaveServer({ configPath, token, port, storageMode });
-  console.log(`BOARD_SAVE_SERVER_READY ${server.origin}`);
-  const parentPid = Number(process.env.BOARD_SAVE_PARENT_PID ?? "0");
-  const parentWatch = parentPid > 0 ? setInterval(() => {
-    try {
-      process.kill(parentPid, 0);
-    } catch {
-      server.close().finally(() => process.exit(0));
-    }
-  }, 2_000) : undefined;
-  parentWatch?.unref();
+  const server = await startBoardSaveServer({ configPath, token, port, storageMode, idleTimeoutMs });
+  console.log(`BOARD_SAVE_SERVER_READY ${server.origin} idleMs=${idleTimeoutMs}`);
   const stop = () => server.close().finally(() => process.exit(0));
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+  await server.closed;
+  process.off("SIGINT", stop);
+  process.off("SIGTERM", stop);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

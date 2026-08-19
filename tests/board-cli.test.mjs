@@ -133,6 +133,8 @@ process.once("SIGTERM", stop);
   const response = await fetch(`http://localhost:${port}/`);
   assert.equal(response.status, 200);
   assert.match(output, new RegExp(`BOARD_URL http://localhost:${port}/\\?config=[a-f0-9]{64}`));
+  assert.match(output, /[?&]save=http%3A%2F%2F127\.0\.0\.1%3A\d+/);
+  assert.match(output, /[?&]saveToken=[a-f0-9]{48}/);
   assert.match(output, /BOARD_CONFIG_LOADED sha256=[a-f0-9]{64}/);
   assert.equal(JSON.parse(await readFile(outputPath, "utf8")).version, 1);
   assert.match(output, /BOARD_OPENED pending-codex-browser/);
@@ -157,6 +159,7 @@ test("launch reuses an existing local Difftale board", async (context) => {
 
   const child = spawn(process.execPath, [launcher, "launch", "--config", configPath, "--output", outputPath, "--repo-root", temporaryRoot, "--port", String(port), "--no-open"], {
     cwd: repoRoot,
+    env: { ...process.env, BOARD_SAVE_IDLE_MS: "500" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
@@ -174,14 +177,36 @@ test("launch reuses an existing local Difftale board", async (context) => {
     child.stderr.on("data", inspect);
     child.once("error", rejectPromise);
   });
-  await new Promise((resolvePromise) => setTimeout(resolvePromise, 350));
-  assert.equal(child.exitCode, null, "launcher exited and orphaned the Save Bridge while reusing the Board server");
-  const exited = new Promise((resolvePromise) => child.once("exit", resolvePromise));
-  child.kill("SIGTERM");
-  const status = await exited;
+  const status = child.exitCode ?? await new Promise((resolvePromise, rejectPromise) => {
+    const deadline = setTimeout(() => rejectPromise(new Error(`launcher did not detach from Save Bridge\n${stdout}\n${stderr}`)), 2_000);
+    child.once("exit", (code) => {
+      clearTimeout(deadline);
+      resolvePromise(code);
+    });
+  });
 
-  assert.equal(status === 0 || status === null, true, stderr);
+  assert.equal(status, 0, stderr);
   assert.match(stdout, /BOARD_SERVER_REUSED/);
   assert.match(stdout, /BOARD_SAVE_READY .*mode=local/);
   assert.match(stdout, /BOARD_OPENED pending-codex-browser/);
+  const boardUrl = new URL(stdout.match(/BOARD_URL (\S+)/)?.[1] ?? "");
+  const saveOrigin = boardUrl.searchParams.get("save");
+  const saveToken = boardUrl.searchParams.get("saveToken");
+  const bridgePid = Number(stdout.match(/BOARD_SAVE_READY .* pid=(\d+)/)?.[1]);
+  assert.ok(saveOrigin && saveToken, stdout);
+  assert.ok(Number.isInteger(bridgePid) && bridgePid > 0, stdout);
+  const health = await fetch(`${saveOrigin}/health`, { headers: { "x-board-token": saveToken } });
+  assert.equal(health.status, 200, "Save Bridge died with the launcher");
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 650));
+  await assert.rejects(fetch(`${saveOrigin}/health`, { headers: { "x-board-token": saveToken } }));
+  let bridgeAlive = true;
+  for (let attempt = 0; attempt < 10 && bridgeAlive; attempt += 1) {
+    try {
+      process.kill(bridgePid, 0);
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+    } catch {
+      bridgeAlive = false;
+    }
+  }
+  assert.equal(bridgeAlive, false, "idle Save Bridge process did not exit");
 });

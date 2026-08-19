@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 
-import { makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./difftale.mjs";
+import { ensureRendererRuntime, makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./difftale.mjs";
 import { startBoardSaveServer } from "./save-board-server.mjs";
 
 const renderProtocol = "5";
@@ -283,9 +283,23 @@ async function runFullInteractionQa(page, config, flow, checks) {
   const restoredTitle = await page.locator(`[data-testid="service-node"][data-flow="${flow}"]`).first().locator('[data-testid="service-title-input"]').inputValue();
   ensure(restoredTitle === originalTitle, `restoring a Board version returned ${restoredTitle}; expected ${originalTitle}`);
   checks["local-version-restore"] = true;
+
+  const readOnlyPage = await page.context().newPage();
+  try {
+    const readOnlyUrl = new URL(page.url());
+    readOnlyUrl.searchParams.delete("save");
+    readOnlyUrl.searchParams.delete("saveToken");
+    await readOnlyPage.goto(readOnlyUrl.toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await readOnlyPage.locator('[data-testid="board-write-blocker"][data-bridge-state="missing"]').waitFor({ state: "visible" });
+    ensure(await readOnlyPage.locator('main[data-save-bridge-state="missing"]').count() === 1, "config-only Board URL was not marked read-only");
+    checks["read-only-without-save-url"] = true;
+  } finally {
+    await readOnlyPage.close();
+  }
 }
 
 export async function runBoardQa(options) {
+  ensureRendererRuntime(options.repoRoot);
   const startedAt = Date.now();
   const timings = {};
   const prepareStartedAt = Date.now();
@@ -322,6 +336,7 @@ export async function runBoardQa(options) {
   };
   const checks = {};
   let browser;
+  let context;
   let page;
   let actual;
   const consoleErrors = [];
@@ -336,7 +351,8 @@ export async function runBoardQa(options) {
       throw new Error(`Playwright is required for board QA. Run "npm install" in ${options.repoRoot}. ${error.message}`);
     }
     browser = await launchBrowser(playwright.chromium);
-    page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+    context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
+    page = await context.newPage();
     page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("requestfailed", (request) => requestFailures.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? "failed"}`));
@@ -386,10 +402,12 @@ export async function runBoardQa(options) {
     checks.labels = true;
     checks.playback = true;
     await verifyFlowClearance(page, checks);
+    ensure(await page.locator('main[data-save-bridge-state="online"]').count() === 1, "Save Bridge is not online after Board render");
     ensure(await page.locator('[data-testid="board-save-button"]').isEnabled(), "local save button is not connected");
     ensure(await page.locator('[data-testid="board-version-toggle"]').isEnabled(), "local version history is not connected");
     await page.getByText("只存本機 · 不建立 Git commit", { exact: true }).waitFor({ state: "visible" });
     checks["local-persistence"] = true;
+    checks["save-bridge-heartbeat"] = true;
     checks["local-version-history"] = true;
     checks["storage-mode-label"] = true;
 
@@ -497,6 +515,7 @@ export async function runBoardQa(options) {
     console.error(`BOARD_DURATION_MS ${timings.total}`);
     throw error;
   } finally {
+    await context?.close();
     await browser?.close();
     await saveBridge.close();
     if (!server.reused) await server.stop();

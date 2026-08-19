@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -24,6 +24,23 @@ const boardHtmlMarker = "<title>Difftale · Local</title>";
 
 function fail(message) {
   throw new Error(message);
+}
+
+export function rendererNodeSupport(version = process.versions.node) {
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(String(version));
+  if (!match) return { supported: false, version: String(version) };
+  const [, majorText, minorText] = match;
+  const major = Number(majorText);
+  const minor = Number(minorText);
+  return { supported: major > 22 || (major === 22 && minor >= 13), version: String(version) };
+}
+
+export function ensureRendererRuntime(repoRoot, version = process.versions.node) {
+  if (resolve(repoRoot) !== defaultRepoRoot) return;
+  const runtime = rendererNodeSupport(version);
+  if (!runtime.supported) {
+    fail(`Difftale renderer requires Node.js >=22.13.0; current runtime is ${runtime.version}. Switch Node before launch or QA.`);
+  }
 }
 
 function uint24LittleEndian(buffer, offset) {
@@ -376,32 +393,27 @@ async function startSaveBridge(configPath, storageMode) {
     env: {
       ...process.env,
       BOARD_SAVE_CONFIG: resolve(configPath),
-      BOARD_SAVE_PARENT_PID: String(process.pid),
       BOARD_SAVE_PORT: String(port),
       BOARD_SAVE_TOKEN: token,
       BOARD_STORAGE_MODE: storageMode,
     },
     stdio: "ignore",
-  });
-  const completion = new Promise((resolvePromise, rejectPromise) => {
-    child.once("error", rejectPromise);
-    child.once("exit", (code, signal) => {
-      if (signal || code === 0) resolvePromise({ code, signal });
-      else rejectPromise(new Error(`local save bridge exited with code ${code}`));
-    });
+    detached: process.platform !== "win32",
   });
   const origin = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${origin}/health`, { headers: { "x-board-token": token } });
-      if (response.ok) return {
-        origin,
-        token,
-        pid: child.pid,
-        completion,
-        stop: () => { if (child.exitCode === null) child.kill("SIGTERM"); },
-      };
+      if (response.ok) {
+        child.unref();
+        return {
+          origin,
+          token,
+          pid: child.pid,
+          completion: Promise.resolve({ code: 0, signal: null, detached: true }),
+        };
+      }
     } catch {
       // The local save bridge is still starting.
     }
@@ -427,10 +439,13 @@ export async function startBoardServer({ repoRoot, port }) {
   }
   if (existing.occupied) fail(`port ${resolvedPort} is already serving another app; choose a different --port`);
 
+  ensureRendererRuntime(absoluteRepoRoot);
+
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  const runtimePath = [dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter);
   const child = spawn(npmCommand, ["run", "dev", "--", "--port", String(resolvedPort)], {
     cwd: absoluteRepoRoot,
-    env: process.env,
+    env: { ...process.env, PATH: runtimePath },
     stdio: "inherit",
     detached: process.platform !== "win32",
   });
@@ -489,8 +504,6 @@ export async function launchBoard({ configPath, outputPath, repoRoot, port, shou
     console.log("BOARD_OPENED pending-codex-browser");
   }
   console.log(`BOARD_DURATION_MS ${Date.now() - startedAt}`);
-  process.once("SIGINT", saveBridge.stop);
-  process.once("SIGTERM", saveBridge.stop);
   if (server.reused) return saveBridge.completion;
   return server.completion;
 }

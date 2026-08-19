@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,6 +9,17 @@ const defaultSkillRoot = resolve(repoRoot, "skills/difftale");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+async function collectTextFiles(root) {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = resolve(root, entry.name);
+    if (entry.isDirectory()) files.push(...await collectTextFiles(path));
+    else if (/\.(?:json|jsonl|md|mjs|ya?ml)$/i.test(entry.name)) files.push(path);
+  }
+  return files;
 }
 
 export async function validateSkill(skillRoot = defaultSkillRoot) {
@@ -39,11 +50,13 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   const categoryIconFiles = categoryIconNames.map((name) => resolve(repoRoot, `public/icons/${name}.svg`));
 
   await Promise.all([...Object.values(files), ...categoryIconFiles].map((file) => access(file)));
-  const [skill, manifest, resolver, logoMcp] = await Promise.all([
+  const [skill, manifest, resolver, logoMcp, fanout, packageTextFiles] = await Promise.all([
     readFile(files.skill, "utf8"),
     readFile(files.manifest, "utf8"),
     readFile(resolve(repoRoot, "skills/RESOLVER.md"), "utf8"),
     readFile(files.logoMcp, "utf8"),
+    readFile(files.fanout, "utf8"),
+    collectTextFiles(skillRoot),
   ]);
 
   const frontmatter = skill.match(/^---\n([\s\S]*?)\n---\n/);
@@ -61,6 +74,8 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/version-history\.md/.test(skill), "skill must route version requests to the version-history reference");
   assert(/kind: `screen`|`kind: "screen"`/.test(skill) && /screenshots\.md/.test(skill), "skill must model screenshots as first-class screen nodes");
   assert(/project layout\/platform code/.test(skill) && /Ask the user when evidence conflicts/.test(skill), "skill must inspect layout code and confirm ambiguous screen frames");
+  assert(/Never copy a user's product, company, repository/.test(skill), "skill must keep user-specific evidence out of the reusable package");
+  assert(/role-based names and behavioral summaries/.test(skill), "skill must default to anonymized behavioral copy");
   assert(/value: "thesvg"/.test(manifest), "agents/openai.yaml must declare the Logo MCP dependency");
   assert(/allow_implicit_invocation: true/.test(manifest), "skill must allow implicit routing");
   assert(/difftale/.test(resolver) && /畫面/.test(resolver) && /本地端動態 Board/.test(resolver), "resolver entry is missing");
@@ -68,7 +83,17 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/categoryIcon/.test(logoMcp), "logo fallback must define category icons");
   assert(/Never redraw, recolor, approximate, or generate a brand logo/.test(logoMcp), "logo fallback must prohibit invented brand marks");
 
-  return { skillRoot, files: Object.keys(files).length, categoryIcons: categoryIconFiles.length };
+  const personalPathPattern = /(?:\/Users\/[^/\s<"`]+|\/home\/[^/\s<"`]+|[A-Z]:\\\\Users\\\\[^\\\s<"`]+)/i;
+  for (const file of packageTextFiles) {
+    const source = await readFile(file, "utf8");
+    assert(!personalPathPattern.test(source), `skill package contains an absolute user path: ${file}`);
+  }
+  const fanoutConfig = JSON.parse(fanout);
+  for (const edge of fanoutConfig.flows.flatMap((flow) => flow.edges)) {
+    assert(!/\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/|\/[a-z0-9_-]+\/[a-z0-9_-]+/i.test(edge.label), "generic fixtures must not include copied application routes");
+  }
+
+  return { skillRoot, files: Object.keys(files).length, categoryIcons: categoryIconFiles.length, privacyFiles: packageTextFiles.length };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

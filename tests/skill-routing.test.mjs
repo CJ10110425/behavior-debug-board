@@ -12,6 +12,17 @@ test("skill package has the required contract, resources, resolver, and Logo MCP
   const result = await validateSkill(skillRoot);
   assert.equal(result.files, 17);
   assert.equal(result.categoryIcons, 17);
+  assert.ok(result.privacyFiles >= 10);
+});
+
+test("reusable skill keeps personal project evidence out of public fixtures", async () => {
+  const skill = await readFile(resolve(skillRoot, "SKILL.md"), "utf8");
+  const fanout = JSON.parse(await readFile(resolve(skillRoot, "assets/fanout-board.json"), "utf8"));
+  assert.match(skill, /Never copy a user's product, company, repository/);
+  assert.match(skill, /role-based names and behavioral summaries/);
+  for (const edge of fanout.flows.flatMap((flow) => flow.edges)) {
+    assert.doesNotMatch(edge.label, /\b(?:GET|POST|PUT|PATCH|DELETE)\s+\/|\/[a-z0-9_-]+\/[a-z0-9_-]+/i);
+  }
 });
 
 test("routing eval covers real positive and negative user language", async () => {

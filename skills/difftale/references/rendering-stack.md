@@ -12,7 +12,8 @@
 - UI icons: local Lucide SVG masks from `lucide-static`.
 - Brand assets: local raw SVG files resolved through theSVG MCP/registry, preserving official colors.
 - Runtime config: validated canonical JSON written to ignored `public/runtime/<sha256>.json`, then fetched from `?config=<sha256>` and verified again in the browser.
-- Local persistence: editable schema-v2 documents are atomically written through a token-protected Save Bridge bound to `127.0.0.1`; stale base hashes are rejected instead of overwriting another agent's changes.
+- Local persistence: editable schema-v2 documents are atomically written through a token-protected Save Bridge bound to `127.0.0.1`; stale base hashes are rejected instead of overwriting another agent's changes. The Bridge is detached from the launcher process, stays alive while the Board sends authenticated heartbeat requests, and exits after an idle timeout.
+- Write safety: the Board polls Save Bridge health. A missing `save`/`saveToken` URL or offline Bridge places a blocking read-only warning over the canvas so edits cannot silently remain only in React memory.
 - Board-local assets: portable `assets/*.svg` files remain beside `board.json` and are copied into the ignored hash-addressed runtime directory only for rendering.
 - Render readiness: `data-board-ready="true"` is set only after config verification, React Flow initialization, fit-view, fonts/images, and two animation frames.
 - Browser QA: Playwright fast mode verifies the exact config hash, rendered counts, detected fan-out geometry, and screenshot; `--full` additionally tests replay, loading, drag, zoom, and fit-view.

@@ -41,3 +41,9 @@ yarn-error.log*
 /public/runtime/
 /work/
 .gstack-codex/
+
+# Local Difftale QA artifacts created outside the default ignored output folder
+/app/qa-report.json
+/app/*-result.jpg
+/app/*-result.png
+/app/board.*.generated.json

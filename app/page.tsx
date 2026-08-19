@@ -952,6 +952,8 @@ type SaveMeta = {
   git?: { tracked: boolean; branch?: string; status?: string };
 };
 
+type SaveBridgeState = "missing" | "checking" | "online" | "offline";
+
 function BoardSavePanel({ enabled, state, meta, storageMode, onSave, onToggleVersions, versionsOpen }: {
   enabled: boolean;
   state: "saved" | "dirty" | "saving" | "error";
@@ -961,8 +963,9 @@ function BoardSavePanel({ enabled, state, meta, storageMode, onSave, onToggleVer
   onToggleVersions: () => void;
   versionsOpen: boolean;
 }) {
+  const displayState = enabled ? state : "error";
   const label = !enabled
-    ? "未連接本地檔案"
+    ? "本地儲存未連接"
     : state === "saving"
       ? "儲存中…"
       : state === "dirty"
@@ -978,11 +981,11 @@ function BoardSavePanel({ enabled, state, meta, storageMode, onSave, onToggleVer
 
   return (
     <Panel position="top-right" className="board-save-panel">
-      <div data-testid="board-save-status" data-save-state={state}>
-        <span className={`board-save-panel__dot board-save-panel__dot--${state}`} />
+      <div data-testid="board-save-status" data-save-state={displayState}>
+        <span className={`board-save-panel__dot board-save-panel__dot--${displayState}`} />
         <div>
           <strong>{label}</strong>
-          <small title={meta.path}>{state === "error" ? meta.message : gitLabel}</small>
+          <small title={meta.path}>{!enabled ? meta.message ?? "正在確認 Save Bridge" : state === "error" ? meta.message : gitLabel}</small>
         </div>
         <div className="board-save-panel__actions">
           <button type="button" data-testid="board-version-toggle" aria-expanded={versionsOpen} disabled={!enabled} onClick={onToggleVersions}>版本</button>
@@ -1123,6 +1126,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
   const [customEdges, setCustomEdges] = useState<PacketEdge[]>(() => persistedCanvasEdges(boardConfig));
   const [boardReady, setBoardReady] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "dirty" | "saving" | "error">("saved");
+  const [saveBridgeState, setSaveBridgeState] = useState<SaveBridgeState>(saveEndpoint && saveToken ? "checking" : "missing");
   const [saveMeta, setSaveMeta] = useState<SaveMeta>({});
   const [savedHash, setSavedHash] = useState(configHash);
   const [versionPanelOpen, setVersionPanelOpen] = useState(false);
@@ -1134,22 +1138,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
   const [selectedRevision, setSelectedRevision] = useState<string>();
   const [revisionDiff, setRevisionDiff] = useState<SemanticDiff>();
   const [restoreCandidate, setRestoreCandidate] = useState<string>();
-
-  useEffect(() => {
-    if (!saveEndpoint || !saveToken) return;
-    void fetch(`${saveEndpoint}/health`, { headers: { "x-board-token": saveToken } })
-      .then(async (response) => {
-        const result = await response.json() as { path?: string; git?: SaveMeta["git"]; storageMode?: "git" | "local" };
-        if (response.ok) {
-          setSaveMeta({ path: result.path, git: result.git });
-          setStorageMode(result.storageMode === "git" ? "git" : "local");
-        }
-      })
-      .catch(() => {
-        setSaveMeta({ message: "無法讀取本地儲存狀態" });
-        setSaveState("error");
-      });
-  }, [saveEndpoint, saveToken]);
+  const savePromiseRef = useRef<Promise<string | undefined> | null>(null);
 
   useFlowPlayback(before, setBefore, flowConfigByMode.before.steps.length, timeScale);
   useFlowPlayback(after, setAfter, flowConfigByMode.after.steps.length, timeScale);
@@ -1179,31 +1168,84 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
   const savedSourceRef = useRef(persistedSource);
 
   useEffect(() => {
+    if (!saveEndpoint || !saveToken) return;
+    let stopped = false;
+    const checkBridge = async () => {
+      try {
+        const response = await fetch(`${saveEndpoint}/health`, {
+          headers: { "x-board-token": saveToken },
+          cache: "no-store",
+        });
+        const result = await response.json() as { path?: string; git?: SaveMeta["git"]; storageMode?: "git" | "local"; error?: string };
+        if (!response.ok) throw new Error(result.error ?? `health returned HTTP ${response.status}`);
+        if (stopped) return;
+        setSaveBridgeState("online");
+        setSaveMeta({ path: result.path, git: result.git });
+        setStorageMode(result.storageMode === "git" ? "git" : "local");
+      } catch {
+        if (stopped) return;
+        setSaveBridgeState("offline");
+        setSaveMeta({ message: "本地寫檔服務已離線，請重新執行 difftale launch" });
+        setSaveState("error");
+      }
+    };
+    void checkBridge();
+    const heartbeat = window.setInterval(() => { void checkBridge(); }, 10_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(heartbeat);
+    };
+  }, [saveEndpoint, saveToken]);
+
+  useEffect(() => {
     if (persistedSource !== savedSourceRef.current && saveState === "saved") setSaveState("dirty");
   }, [persistedSource, saveState]);
 
-  const saveBoard = useCallback(async () => {
-    if (!saveEndpoint || !saveToken) return undefined;
+  const saveBoard = useCallback(() => {
+    if (!saveEndpoint || !saveToken || saveBridgeState !== "online") return Promise.resolve(undefined);
+    if (savePromiseRef.current) return savePromiseRef.current;
     setSaveState("saving");
-    try {
-      const response = await fetch(`${saveEndpoint}/save`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-board-token": saveToken },
-        body: JSON.stringify({ baseHash: savedHash, config: persistedDocument }),
-      });
-      const result = await response.json() as { error?: string; path?: string; sha256?: string; git?: SaveMeta["git"] };
-      if (!response.ok || !result.sha256) throw new Error(result.error ?? `save returned HTTP ${response.status}`);
-      savedSourceRef.current = persistedSource;
-      setSavedHash(result.sha256);
-      setSaveMeta({ path: result.path, git: result.git });
-      setSaveState("saved");
-      return result.sha256;
-    } catch (error) {
-      setSaveMeta({ message: error instanceof Error ? error.message : String(error) });
-      setSaveState("error");
-      return undefined;
+    const operation = (async () => {
+      try {
+        const response = await fetch(`${saveEndpoint}/save`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-board-token": saveToken },
+          body: JSON.stringify({ baseHash: savedHash, config: persistedDocument }),
+        });
+        const result = await response.json() as { error?: string; path?: string; sha256?: string; git?: SaveMeta["git"] };
+        if (!response.ok || !result.sha256) throw new Error(result.error ?? `save returned HTTP ${response.status}`);
+        savedSourceRef.current = persistedSource;
+        setSavedHash(result.sha256);
+        setSaveMeta({ path: result.path, git: result.git });
+        setSaveState("saved");
+        return result.sha256;
+      } catch (error) {
+        setSaveMeta({ message: error instanceof Error ? error.message : String(error) });
+        setSaveState("error");
+        return undefined;
+      }
+    })();
+    savePromiseRef.current = operation;
+    void operation.finally(() => {
+      if (savePromiseRef.current === operation) savePromiseRef.current = null;
+    });
+    return operation;
+  }, [persistedDocument, persistedSource, saveBridgeState, saveEndpoint, saveToken, savedHash]);
+
+  const ensureBoardSaved = useCallback(async () => {
+    let stableHash = savedHash;
+    if (savePromiseRef.current) {
+      const pendingHash = await savePromiseRef.current;
+      if (!pendingHash) return undefined;
+      stableHash = pendingHash;
     }
-  }, [persistedDocument, persistedSource, saveEndpoint, saveToken, savedHash]);
+    if (persistedSource !== savedSourceRef.current) {
+      const nextHash = await saveBoard();
+      if (!nextHash) return undefined;
+      stableHash = nextHash;
+    }
+    return stableHash;
+  }, [persistedSource, saveBoard, savedHash]);
 
   const loadVersions = useCallback(async () => {
     if (!saveEndpoint || !saveToken) return;
@@ -1234,10 +1276,8 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     setVersionBusy(true);
     setVersionError("");
     try {
-      if (saveState === "dirty" || saveState === "error") {
-        const saved = await saveBoard();
-        if (!saved) throw new Error("請先完成本地儲存，再建立版本");
-      }
+      const saved = await ensureBoardSaved();
+      if (!saved) throw new Error("請先完成本地儲存，再建立版本");
       const response = await fetch(`${saveEndpoint}/version`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-board-token": saveToken },
@@ -1260,7 +1300,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     } finally {
       setVersionBusy(false);
     }
-  }, [saveBoard, saveEndpoint, saveState, saveToken, versionTitle]);
+  }, [ensureBoardSaved, saveEndpoint, saveToken, versionTitle]);
 
   const compareVersion = useCallback(async (revision: BoardRevision) => {
     if (!saveEndpoint || !saveToken) return;
@@ -1289,12 +1329,8 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     setVersionBusy(true);
     setVersionError("");
     try {
-      let baseHash = savedHash;
-      if (saveState === "dirty" || saveState === "error") {
-        const saved = await saveBoard();
-        if (!saved) throw new Error("請先完成本地儲存，再還原版本");
-        baseHash = saved;
-      }
+      const baseHash = await ensureBoardSaved();
+      if (!baseHash) throw new Error("請先完成本地儲存，再還原版本");
       const response = await fetch(`${saveEndpoint}/restore`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-board-token": saveToken },
@@ -1308,7 +1344,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       setVersionError(error instanceof Error ? error.message : String(error));
       setVersionBusy(false);
     }
-  }, [onRestored, restoreCandidate, saveBoard, saveEndpoint, saveState, saveToken, savedHash]);
+  }, [ensureBoardSaved, onRestored, restoreCandidate, saveEndpoint, saveToken]);
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -1435,6 +1471,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       data-screen-node-count={screenNodeCount}
       data-edge-count={edgeCount}
       data-label-count={edgeCount}
+      data-save-bridge-state={saveBridgeState}
     >
       <ReactFlow
         className={`canvas-tool--${tool}`}
@@ -1461,7 +1498,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
         <CanvasToolbar />
         <CreationToolbar tool={tool} onToolChange={setTool} />
         <BoardSavePanel
-          enabled={Boolean(saveEndpoint && saveToken)}
+          enabled={saveBridgeState === "online"}
           state={saveState}
           meta={saveMeta}
           storageMode={storageMode}
@@ -1492,6 +1529,20 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
           onClose={() => setVersionPanelOpen(false)}
         />
       </ReactFlow>
+      {saveBridgeState !== "online" ? (
+        <div className="board-write-blocker" role="alert" data-testid="board-write-blocker" data-bridge-state={saveBridgeState}>
+          <div>
+            <strong>{saveBridgeState === "checking" ? "正在連接本地儲存…" : "目前無法安全編輯"}</strong>
+            <span>
+              {saveBridgeState === "missing"
+                ? "這個網址缺少儲存連線。請重新執行 difftale launch，並使用完整 BOARD_URL。"
+                : saveBridgeState === "offline"
+                  ? "本地寫檔服務已離線。請重新執行 difftale launch，再從新的完整網址開啟。"
+                  : "確認 Save Bridge 可寫入後，畫布會自動解除鎖定。"}
+            </span>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

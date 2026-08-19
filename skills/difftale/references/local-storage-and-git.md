@@ -31,6 +31,7 @@ Store a self-contained bundle under the current Git root:
 - Save and QA before committing.
 - Stage only the bundle and any intentionally changed documentation. Never use `git add -A`.
 - Commit a coherent board revision, for example `board(firebase-rules): explain successful access path`.
+- Before committing, force-save from the Board, wait until the save status is `saved`, and confirm the canonical `board.json` hash stays stable through the one-second auto-save window. If it changes after a commit, QA the new hash before amending.
 - A named version created from the Board UI or version CLI is this same local commit; do not maintain duplicate snapshot files in Git mode.
 - Do not push or open a PR unless the user explicitly requests it.
 - Preserve unrelated dirty files.
@@ -68,6 +69,8 @@ Do not persist transient renderer state:
 - hash-addressed `public/runtime/` files;
 - QA screenshots and reports unless the user explicitly wants artifacts tracked.
 
-The local Save Bridge binds to `127.0.0.1`, requires a random session token, validates the full document, uses a base hash to reject stale writes, and atomically replaces only the resolved source `board.json`.
+Never copy a user's Board bundle, screenshots, product/repository names, source paths, raw code/logs, private URLs, or identifiers back into the reusable `skills/difftale/` package, its fixtures, tests, or public docs. Git mode tracks the user's own bundle in their selected project only; it does not make that content part of Difftale itself.
+
+The local Save Bridge binds to `127.0.0.1`, requires a random session token, validates the full document, uses a base hash to reject stale writes, and atomically replaces only the resolved source `board.json`. It is detached from the launcher/Codex task lifecycle, stays alive through authenticated browser heartbeats, and closes after an idle timeout. Always open the exact launcher-provided `BOARD_URL`; removing `save` or `saveToken` intentionally makes the Board read-only.
 The board auto-saves after one second of inactivity; the Save button and `Cmd/Ctrl+S` force an immediate save.
 Auto-save updates only `board.json`; it never creates a named version. The user explicitly creates versions from the version panel or version CLI. Read [version-history.md](version-history.md) before comparing or restoring.

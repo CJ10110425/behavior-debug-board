@@ -9,8 +9,10 @@ Use screenshot nodes when the change is visible in an app, web app, or mobile fl
 - Do not treat HTTP 200 or `networkidle` alone as visual readiness. Wait for a screen-specific heading, button, image, or explicit `data-*` readiness marker before capture; use a screenshot preview to reject blank or partially hydrated frames.
 - Use PNG for UI text and line art; use JPEG or WebP only when photo-heavy content makes PNG wasteful.
 - Remove or mask secrets, tokens, private messages, email addresses, and real customer data before saving.
+- Remove or mask the user's own product/company name, private hostnames, repository/file names, and internal identifiers unless the user explicitly wants those exact details visible in their local Board.
 - Save under `assets/screens/`. Never hotlink a runtime screenshot.
 - Use immutable filenames such as `after-dashboard-a82f61c2.png`. If pixels change, create a new asset instead of overwriting the old file.
+- Never copy a user screenshot into the reusable Difftale skill, renderer fixtures, tests, or public documentation. User screenshots belong only to that user's selected Board bundle.
 
 When browser automation is available, open the local app, navigate to the required state, verify the target UI element, DOM, and console, then capture the screenshot directly into the Board bundle. When automation is unavailable, copy a user-provided image into the same folder.
 
@@ -36,13 +38,13 @@ An explicit frame always wins over geometry. A responsive web page captured at a
 ```json
 {
   "id": "dashboard",
-  "title": "任務大廳",
-  "subtitle": "登入後看見可加入的世界",
+  "title": "主要入口",
+  "subtitle": "登入後看見可用內容",
   "detail": "新的主要入口",
   "kind": "screen",
   "screenshot": "assets/screens/after-dashboard-a82f61c2.png",
   "frame": "browser",
-  "route": "/zh-tw/",
+  "route": "登入後首頁",
   "changed": true
 }
 ```
@@ -50,11 +52,11 @@ An explicit frame always wins over geometry. A responsive web page captured at a
 - `kind` must be `screen` and requires Board schema version `3`.
 - `screenshot` must be a board-local `.png`, `.jpg`, `.jpeg`, or `.webp` asset.
 - `frame` is `browser`, `mobile`, or `app`. New Boards should store it explicitly after inference or confirmation; the renderer's browser fallback exists only for older embedded configs.
-- `route` is the user-facing route, screen name, or app location—not a source-code path.
+- `route` is a generic user-facing route, screen role, or app location—not a source-code path, private URL, or copied internal route.
 - Keep title and subtitle short enough to remain editable and readable on the canvas.
 - Mobile cards show only that short editable title and one-line description around the phone frame; `detail` remains semantic Board data but is not rendered as another footer.
 
-Connect screens with behavioral labels such as `點擊登入`, `送出邀請碼`, `完成排序`, or `進入任務大廳`. Connect screens to services only when that service interaction materially explains the observed change.
+Connect screens with behavioral labels such as `點擊登入`, `送出表單`, `完成排序`, or `進入主要入口`. Connect screens to services only when that service interaction materially explains the observed change.
 
 ## Before / After
 
