@@ -1,34 +1,34 @@
 {
   "version": 1,
-  "title": "首頁雙來源 Fan-out：單一路徑失敗不再拖垮整個 Feed",
+  "title": "Home feed fan-out: one failed source no longer breaks the whole feed",
   "flows": [
     {
       "id": "before",
-      "label": "Before｜兩條請求綁成全有或全無",
+      "label": "Before | both requests are all-or-nothing",
       "outcome": "error",
       "position": { "x": 150, "y": 55 },
       "nodes": [
         {
           "id": "trending",
-          "title": "近期熱門 API",
-          "subtitle": "Cloud Run · 近 7 天",
-          "detail": "短暫 timeout／5xx",
+          "title": "Recent trends API",
+          "subtitle": "Cloud Run · last 7 days",
+          "detail": "Intermittent timeout or 5xx",
           "kind": "service",
           "logo": "/logos/cloud-run.svg"
         },
         {
           "id": "home",
-          "title": "iOS 首頁",
-          "subtitle": "熱門內容 Feed",
-          "detail": "兩條 await 共用同一個成功條件",
+          "title": "iOS home",
+          "subtitle": "Trending feed",
+          "detail": "Both awaits share one success condition",
           "kind": "client",
           "categoryIcon": "mobile-app"
         },
         {
           "id": "firestore",
-          "title": "長期熱門查詢",
+          "title": "All-time trends query",
           "subtitle": "Cloud Firestore · all-time",
-          "detail": "這一路其實仍可正常回傳",
+          "detail": "This source can still return normally",
           "kind": "database",
           "logo": "/logos/firestore.svg"
         }
@@ -39,7 +39,7 @@
           "source": "home",
           "target": "trending",
           "direction": "forward",
-          "label": "讀取近期資料",
+          "label": "Read recent trends",
           "semantic": "request",
           "activeSteps": [1, 2]
         },
@@ -48,72 +48,72 @@
           "source": "home",
           "target": "firestore",
           "direction": "forward",
-          "label": "查詢歷史資料",
+          "label": "Query all-time trends",
           "semantic": "query",
           "activeSteps": [1, 3]
         }
       ],
       "steps": [
         {
-          "title": "重現雙來源載入",
-          "reason": "使用者打開首頁熱門內容",
-          "note": "一張前端 card 準備同時打兩個後端來源。",
+          "title": "Reproduce two-source loading",
+          "reason": "The user opens the home feed",
+          "note": "One client card prepares to call two backend sources.",
           "nodeStatuses": { "home": "idle", "trending": "idle", "firestore": "idle" }
         },
         {
-          "title": "請求從同一點分岔",
-          "reason": "近期與長期熱門內容要並行取得",
-          "note": "首頁同時送出 Cloud Run API 與 Firestore query。",
+          "title": "Requests fan out",
+          "reason": "Recent and all-time trends load in parallel",
+          "note": "Home calls the Cloud Run API and Firestore query together.",
           "nodeStatuses": { "home": "running", "trending": "running", "firestore": "running" }
         },
         {
-          "title": "其中一路失敗",
-          "reason": "近期熱門 API 暫時 timeout",
-          "note": "Firestore 分支仍在正常執行。",
+          "title": "One source fails",
+          "reason": "The recent trends API times out",
+          "note": "The Firestore branch is still running normally.",
           "nodeStatuses": { "home": "running", "trending": "error", "firestore": "running" }
         },
         {
-          "title": "健康分支有資料",
-          "reason": "Firestore 成功回傳長期熱門內容",
-          "note": "但綁在一起的 await 已因另一條錯誤而失敗。",
+          "title": "The healthy source has data",
+          "reason": "Firestore returns all-time trends",
+          "note": "But the combined await already failed with the other source.",
           "nodeStatuses": { "home": "error", "trending": "error", "firestore": "success" }
         },
         {
-          "title": "整個 Feed 被拖垮",
-          "reason": "任一路失敗就視為整組失敗",
-          "note": "使用者看不到本來可用的 Firestore 熱門內容。",
+          "title": "The whole feed fails",
+          "reason": "Any source failure rejects the entire group",
+          "note": "The user cannot see the Firestore content that was available.",
           "nodeStatuses": { "home": "error", "trending": "error", "firestore": "success" }
         }
       ]
     },
     {
       "id": "after",
-      "label": "After｜每條分支獨立容錯後再合併",
+      "label": "After | each branch degrades independently before merging",
       "outcome": "success",
       "position": { "x": 150, "y": 650 },
       "nodes": [
         {
           "id": "trending",
-          "title": "近期熱門 API",
-          "subtitle": "Cloud Run · 近 7 天",
-          "detail": "失敗時降級成空陣列",
+          "title": "Recent trends API",
+          "subtitle": "Cloud Run · last 7 days",
+          "detail": "Falls back to an empty list on failure",
           "kind": "service",
           "logo": "/logos/cloud-run.svg"
         },
         {
           "id": "home",
-          "title": "iOS 首頁",
-          "subtitle": "熱門內容 Feed",
-          "detail": "分別 catch，再混合所有可用結果",
+          "title": "iOS home",
+          "subtitle": "Trending feed",
+          "detail": "Catches separately, then merges every available result",
           "kind": "client",
           "categoryIcon": "mobile-app",
           "changed": true
         },
         {
           "id": "firestore",
-          "title": "長期熱門查詢",
+          "title": "All-time trends query",
           "subtitle": "Cloud Firestore · all-time",
-          "detail": "保持獨立並正常回傳",
+          "detail": "Remains independent and returns normally",
           "kind": "database",
           "logo": "/logos/firestore.svg"
         }
@@ -124,7 +124,7 @@
           "source": "home",
           "target": "trending",
           "direction": "forward",
-          "label": "並行 GET trending",
+          "label": "Parallel GET trending",
           "semantic": "request",
           "activeSteps": [1, 2]
         },
@@ -133,40 +133,40 @@
           "source": "home",
           "target": "firestore",
           "direction": "forward",
-          "label": "並行 query hot",
+          "label": "Parallel hot query",
           "semantic": "query",
           "activeSteps": [1, 3]
         }
       ],
       "steps": [
         {
-          "title": "載入容錯修正",
-          "reason": "兩個資料來源不再共用同一個失敗域",
-          "note": "只有兩路都失敗時，整個首頁才顯示錯誤。",
+          "title": "Load the resilience fix",
+          "reason": "The sources no longer share one failure domain",
+          "note": "Home shows an error only if both sources fail.",
           "nodeStatuses": { "home": "idle", "trending": "idle", "firestore": "idle" }
         },
         {
-          "title": "請求從同一點分岔",
-          "reason": "維持並行載入速度",
-          "note": "同一張前端 card 仍同時打兩張後端 card。",
+          "title": "Requests fan out",
+          "reason": "Parallel loading remains fast",
+          "note": "The client still calls both backend cards together.",
           "nodeStatuses": { "home": "running", "trending": "running", "firestore": "running" }
         },
         {
-          "title": "局部降級",
-          "reason": "近期熱門 API 暫時 timeout",
-          "note": "這條分支被轉成空陣列，不取消 Firestore 分支。",
+          "title": "Degrade one branch",
+          "reason": "The recent trends API times out",
+          "note": "This branch becomes an empty list without cancelling Firestore.",
           "nodeStatuses": { "home": "running", "trending": "error", "firestore": "running" }
         },
         {
-          "title": "保留健康結果",
-          "reason": "Firestore 成功回傳長期熱門內容",
-          "note": "首頁繼續使用這一路的資料。",
+          "title": "Keep the healthy result",
+          "reason": "Firestore returns all-time trends",
+          "note": "Home continues with this source's data.",
           "nodeStatuses": { "home": "running", "trending": "error", "firestore": "success" }
         },
         {
-          "title": "顯示降級版 Feed",
-          "reason": "至少一個來源仍可用",
-          "note": "使用者仍看到熱門內容，系統只記錄 degraded source。",
+          "title": "Show a degraded feed",
+          "reason": "At least one source is still available",
+          "note": "The user still sees trends while the system records the degraded source.",
           "nodeStatuses": { "home": "success", "trending": "error", "firestore": "success" }
         }
       ]

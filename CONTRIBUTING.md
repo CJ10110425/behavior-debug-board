@@ -1,78 +1,46 @@
-# 貢獻指南
+# Contributing to Difftale
 
-謝謝你想讓 Difftale 更好。這個專案歡迎新的畫面／服務 flow、品牌 logo、互動改善、測試與文件修正。
+**English** · [繁體中文](CONTRIBUTING.zh-TW.md)
 
-## 外部貢獻流程
+Contributions are welcome for new screen/service flows, verified brand assets, interaction improvements, tests, and documentation.
 
-1. 在 GitHub 按 `Fork`，建立自己的 repo 副本。
-2. Clone 你的 fork，並保留原 repo 為 `upstream`：
+## Pull request workflow
 
-   ```bash
-   git clone https://github.com/<your-name>/<repo>.git
-   cd <repo>
-   git remote add upstream https://github.com/<owner>/<repo>.git
-   ```
-
-3. 從最新 `main` 建立小而專注的 branch：
-
-   ```bash
-   git fetch upstream
-   git switch -c feat/short-description upstream/main
-   ```
-
-4. 修改後執行完整檢查：
-
-   ```bash
-   npm install
-   npm run check
-   ```
-
-   若修改 renderer、互動或 layout，再執行真實瀏覽器回歸：
+1. Fork the repository on GitHub.
+2. Clone your fork and add the original repository as `upstream`.
+3. Create a small, focused branch from the latest `upstream/main`.
+4. Run `npm install` and `npm run check`.
+5. For renderer, interaction, or layout changes, also run:
 
    ```bash
    npm run board:qa -- --port auto --flow after --final-step --full --screenshot outputs/pr-board.jpg
    ```
 
-5. Commit 並 push 到自己的 fork：
+6. Commit and push to your fork, then open a pull request against the original repository's `main`.
+7. Describe the behavior change, Before/After result, test evidence, and any visible UI evidence.
 
-   ```bash
-   git add <changed-files>
-   git commit -m "feat: describe the behavior change"
-   git push -u origin feat/short-description
-   ```
+GitHub documents the full [project contribution workflow](https://docs.github.com/en/get-started/exploring-projects-on-github/contributing-to-a-project?tool=cli) and [pull requests from forks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork).
 
-6. 在 GitHub 建立 Pull Request：base 選原 repo 的 `main`，compare 選你的 fork branch。
-7. 清楚填寫 behavior change、Before / After、測試結果與畫面證據；依 reviewer 意見繼續 push 即可更新同一張 PR。
+## Behavior contracts
 
-GitHub 官方流程可參考 [Contributing to a project](https://docs.github.com/en/get-started/exploring-projects-on-github/contributing-to-a-project?tool=cli) 與 [Creating a pull request from a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork)。
+- Before and After must share one canvas.
+- App/web/mobile captures are local `screen` nodes, not hotlinks or service-card attachments.
+- One edge means one direction; requests and responses never share an edge.
+- Edges, arrowheads, and labels are visible before playback.
+- Explain behavior, cause, and user outcome rather than commits or code diffs.
+- Preserve official logo colors and proportions, and document the source and usage terms.
+- A successful skill run launches and opens the localhost Board.
+- Use immutable screen filenames so semantic diff can identify changed screens.
 
-## Board 不可破壞的語意
+## Logo contributions
 
-- Before / After 必須位於同一張畫布。
-- App／Web／Mobile 截圖必須使用本地 `screen` node，不能只當 service card 附件或外部 hotlink。
-- 一條 edge 只表示一個方向；請求與回傳不得共用同一條線。
-- 播放前就要顯示所有線、箭頭與文字，動畫只負責強調目前步驟。
-- 預設說明 behavior、原因與使用者結果，不展示 commit 或 code diff。
-- 品牌 logo 保留官方顏色與比例，並附來源與使用說明。
-- Skill 成功時必須啟動並打開 localhost Board。
-- 截圖要使用不覆寫的檔名；畫面改變時建立新資產，讓 semantic diff 能指出哪個畫面變了。
+Follow the [Logo MCP workflow](skills/difftale/references/logo-mcp.md). Prefer the exact product logo, then official brand sources or trustworthy registries. If no reliable brand asset exists, use a matching `categoryIcon`; do not generate or guess a brand logo.
 
-## Logo 貢獻
+Document the source URL, variant, license or usage terms, and trademark owner. Do not submit recolored, unattributed, or misleading marks.
 
-優先依 [Logo MCP workflow](skills/difftale/references/logo-mcp.md) 找 exact product logo；MCP 找不到時搜尋官方品牌頁與可信 registry，再存到 `public/logos/`。完全找不到可靠 logo 時，改用符合服務用途的 `categoryIcon`，不要提交自行生成或猜測的品牌 logo。若增加 skill 的離線 fallback，也同步放入 `skills/difftale/assets/logos/`。
+## Review scope
 
-Pull Request 必須補上：
-
-- 原始來源 URL。
-- variant 名稱。
-- license 或使用條款。
-- 商標權利人。
-
-不要提交來源不明、經過重新上色或可能誤導為官方合作的標誌。
-
-## PR 規模與 review
-
-- 一張 PR 解決一個可清楚描述的問題。
-- 不要把格式化整個 repo 與功能修改混在一起。
-- UI 修改請附 Before / After 圖或短錄影。
-- Reviewer 會優先檢查 behavior contract、方向語意、可讀性、測試與第三方資產來源。
+- Keep each pull request focused on one clearly described problem.
+- Do not mix repository-wide formatting with a functional change.
+- Attach a Before/After capture or short recording for UI changes.
+- Reviewers prioritize behavior contracts, edge direction, readability, tests, and third-party asset provenance.

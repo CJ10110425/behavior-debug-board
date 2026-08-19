@@ -174,10 +174,10 @@ async function runFullInteractionQa(page, config, flow, checks) {
   await page.locator('[data-testid="board-version-toggle"]').click();
   const versionPanel = page.locator('[data-testid="board-version-panel"]');
   await versionPanel.waitFor({ state: "visible" });
-  await versionPanel.getByLabel("版本說明").fill("QA 初始版本");
+  await versionPanel.locator('[data-testid="board-version-title"]').fill("Initial QA version");
   await page.locator('[data-testid="board-version-create"]').click();
   await versionPanel.locator("article").first().waitFor({ state: "visible" });
-  await versionPanel.getByLabel("關閉版本紀錄").click();
+  await versionPanel.locator('[data-testid="board-version-close"]').click();
   checks["local-version-create"] = true;
 
   await seekFlow(page, flow, totalSteps - 1);
@@ -267,10 +267,10 @@ async function runFullInteractionQa(page, config, flow, checks) {
   await page.locator('[data-testid="board-version-toggle"]').click();
   await versionPanel.waitFor({ state: "visible" });
   const firstVersion = versionPanel.locator("article").first();
-  await firstVersion.getByRole("button", { name: "比較" }).click();
+  await firstVersion.locator('[data-testid="board-version-compare"]').click();
   await page.locator('[data-testid="board-version-diff"] .semantic-change--changed').first().waitFor({ state: "visible" });
   checks["semantic-version-diff"] = true;
-  await firstVersion.getByRole("button", { name: "還原" }).click();
+  await firstVersion.locator('[data-testid="board-version-restore"]').click();
   await page.locator('[data-testid="board-version-restore-confirm"]').click();
   await page.waitForFunction(
     ({ selectedFlow, expectedTitle }) => {
@@ -289,10 +289,14 @@ async function runFullInteractionQa(page, config, flow, checks) {
     const readOnlyUrl = new URL(page.url());
     readOnlyUrl.searchParams.delete("save");
     readOnlyUrl.searchParams.delete("saveToken");
+    readOnlyUrl.searchParams.set("lang", "zh-TW");
     await readOnlyPage.goto(readOnlyUrl.toString(), { waitUntil: "domcontentloaded", timeout: 30_000 });
     await readOnlyPage.locator('[data-testid="board-write-blocker"][data-bridge-state="missing"]').waitFor({ state: "visible" });
     ensure(await readOnlyPage.locator('main[data-save-bridge-state="missing"]').count() === 1, "config-only Board URL was not marked read-only");
+    ensure(await readOnlyPage.locator('main[data-locale="zh-TW"]').count() === 1, "Traditional Chinese UI query was not applied");
+    ensure(await readOnlyPage.getByText("目前無法安全編輯", { exact: true }).count() === 1, "Traditional Chinese blocker copy did not render");
     checks["read-only-without-save-url"] = true;
+    checks["traditional-chinese-ui"] = true;
   } finally {
     await readOnlyPage.close();
   }
@@ -364,6 +368,9 @@ export async function runBoardQa(options) {
     timings.render = millisecondsSince(renderStartedAt);
     checks["render-ready"] = true;
     checks["config-hash"] = true;
+    ensure(await page.locator('main[data-locale="en"]').count() === 1, "Board UI is not English by default");
+    ensure(await page.locator('[data-testid="language-toggle"]').textContent() === "繁中", "English UI does not offer the Traditional Chinese switch");
+    checks["english-default-ui"] = true;
 
     actual = {
       serviceNodes: await page.locator('[data-testid="service-node"]').count(),
@@ -405,7 +412,7 @@ export async function runBoardQa(options) {
     ensure(await page.locator('main[data-save-bridge-state="online"]').count() === 1, "Save Bridge is not online after Board render");
     ensure(await page.locator('[data-testid="board-save-button"]').isEnabled(), "local save button is not connected");
     ensure(await page.locator('[data-testid="board-version-toggle"]').isEnabled(), "local version history is not connected");
-    await page.getByText("只存本機 · 不建立 Git commit", { exact: true }).waitFor({ state: "visible" });
+    await page.getByText("Local only · no Git commits", { exact: true }).waitFor({ state: "visible" });
     checks["local-persistence"] = true;
     checks["save-bridge-heartbeat"] = true;
     checks["local-version-history"] = true;

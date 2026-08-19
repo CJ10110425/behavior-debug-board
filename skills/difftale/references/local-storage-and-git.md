@@ -7,6 +7,16 @@ Local persistence is mandatory; Git is an upfront user choice. Git always means 
 If the request does not already state a preference, ask this before gathering the debug story or writing files, then stop the turn:
 
 ```text
+Should this Board use Git version control? Everything is saved locally first and nothing is uploaded automatically.
+
+1. Git versioning (recommended) — save in the current project; I will create/use a feature branch, validate, and commit
+2. Local only — save in a local project folder without commits; Git can be enabled later
+3. Cancel — do not create a Board
+```
+
+Ask in the user's language when it is known. Traditional Chinese equivalent:
+
+```text
 要讓這張 Board 使用 Git 版本控制嗎？所有內容都會先存在本機，不會自動上傳。
 
 1. Git 版控（推薦）— 存進目前專案，由我建立／使用 feature branch、驗證並 commit

@@ -1,12 +1,13 @@
-{"prompt":"把這個 Firebase permission denied bug 畫成 Before / After 給非工程師看。","should_route":true,"reason":"需要 behavior-level debug board"}
-{"prompt":"幫我開一個本地端 board，把目前 debug 的資訊放上去並播放。","should_route":true,"reason":"明確要求 localhost animated board"}
-{"prompt":"我要看這次 behavior change，不要 code diff，只要流程改了哪裡。","should_route":true,"reason":"behavior diff 是核心 trigger"}
-{"prompt":"把 request 和 response 畫成兩條不同方向的線，回傳動畫也要播。","should_route":true,"reason":"需要獨立方向 edge 與 replay"}
-{"prompt":"把這張 behavior board 存到本機並用 Git 做版本控制。","should_route":true,"reason":"需要 durable local board 與 Git workflow"}
-{"prompt":"我剛剛移動了 debug card，幫我保存並 commit 這張圖。","should_route":true,"reason":"需要持久化 canvas layout 並版控"}
-{"prompt":"把這張 Board 跟上一版比較，告訴我流程、Card 和位置分別改了什麼。","should_route":true,"reason":"需要 Board semantic version diff"}
-{"prompt":"恢復 Firebase debug Board 的上一個本機版本。","should_route":true,"reason":"需要安全還原 Board revision"}
-{"prompt":"這次 AI 改了很多 App 畫面，把登入、Loading 和 Dashboard 的截圖串成 Before / After flow。","should_route":true,"reason":"需要把 app screenshots 建成可播放 screen nodes"}
-{"prompt":"我看不懂 Git diff，直接告訴我 Web App 畫面和使用者操作路徑改了什麼。","should_route":true,"reason":"需要 visual behavior diff 與 screen flow"}
-{"prompt":"Review this pull request and identify race conditions.","should_route":false,"reason":"純 code review 不需要 debug board"}
+{"prompt":"Turn this Firebase permission denied bug into a Before/After story for non-engineers.","should_route":true,"reason":"Requires a behavior-level debug Board"}
+{"prompt":"Open a local Board, visualize the current debugging evidence, and make the flow replayable.","should_route":true,"reason":"Explicitly requests an animated localhost Board"}
+{"prompt":"Show the behavior change, not a code diff. I only need to understand how the flow changed.","should_route":true,"reason":"Behavior diff is a core trigger"}
+{"prompt":"Draw the request and response as separate one-way edges and animate the return path.","should_route":true,"reason":"Requires directional edges and replay"}
+{"prompt":"Save this behavior Board locally and use Git for version control.","should_route":true,"reason":"Requires a durable local Board and Git workflow"}
+{"prompt":"I moved a debug card. Save and commit this Board layout.","should_route":true,"reason":"Requires persisted canvas layout and versioning"}
+{"prompt":"Compare this Board with the previous version and explain flow, card, and position changes.","should_route":true,"reason":"Requires Board semantic version diff"}
+{"prompt":"Capture the app login, loading, and dashboard screens and connect them into a Before/After flow.","should_route":true,"reason":"Requires replayable screenshot screen nodes"}
+{"prompt":"幫我開一個本地端 Board，把目前 debug 的資訊放上去並播放。","should_route":true,"reason":"繁中使用者明確要求 localhost animated Board"}
+{"prompt":"把 request 和 response 畫成兩條不同方向的線，回傳動畫也要播。","should_route":true,"reason":"繁中方向 edge 與 replay trigger"}
+{"prompt":"把這張 Board 跟上一版比較，告訴我流程、Card 和位置分別改了什麼。","should_route":true,"reason":"繁中 Board semantic version diff trigger"}
+{"prompt":"Review this pull request and identify race conditions.","should_route":false,"reason":"Code review alone does not require a behavior Board"}
 {"prompt":"幫我做一張靜態系統架構簡報。","should_route":false,"reason":"靜態簡報應使用 presentation/diagram 工具"}

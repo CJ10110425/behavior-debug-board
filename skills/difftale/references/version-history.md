@@ -11,10 +11,12 @@ Never rename Board versions to Before/After or treat playback steps as revision 
 
 Route these requests to the deterministic version scripts:
 
-- 「存一下現在這版」→ create a named revision.
-- 「跟上一版比較」→ semantic diff against the selected revision.
-- 「回復上一版」→ restore after explicit confirmation.
-- 「列出版本」→ list local snapshots or Git commits.
+- “Save this version” → create a named revision.
+- “Compare with the previous version” → semantic diff against the selected revision.
+- “Restore the previous version” → restore after explicit confirmation.
+- “List versions” → list local snapshots or Git commits.
+
+Equivalent requests in the user's language should route the same way, including Traditional Chinese `存一下現在這版`, `跟上一版比較`, `回復上一版`, and `列出版本`.
 
 Use:
 
@@ -26,7 +28,7 @@ npm run board:version -- list \
 npm run board:version -- create \
   --config /absolute/path/to/board.json \
   --storage git \
-  --title "修正 Firebase Rules 後的行為"
+  --title "Behavior after fixing Firebase Rules"
 
 npm run board:version -- diff \
   --config /absolute/path/to/board.json \
@@ -64,7 +66,7 @@ Store immutable snapshots next to the Board source:
         └── assets/
 ```
 
-Before a restore, automatically snapshot the current Board as `還原前自動備份`.
+Before a restore, automatically snapshot the current Board as `Automatic backup before restore`.
 
 ## Semantic diff
 
