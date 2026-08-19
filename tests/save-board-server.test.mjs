@@ -131,3 +131,13 @@ test("local save bridge atomically persists a board and reports Git state", asyn
   assert.equal(restoreResponse.status, 200, JSON.stringify(restoreResult));
   assert.equal(restoreResult.restored.flows[1].nodes[0].title, "已儲存的新標題");
 });
+
+test("local save bridge closes itself after its idle timeout", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "difftale-idle-save-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const configPath = join(temporaryRoot, "board.json");
+  await writeFile(configPath, await readFile(examplePath, "utf8"), "utf8");
+  const server = await startBoardSaveServer({ configPath, token: "b".repeat(48), idleTimeoutMs: 120 });
+  await server.closed;
+  await assert.rejects(fetch(`${server.origin}/health`, { headers: { "x-board-token": "b".repeat(48) } }));
+});

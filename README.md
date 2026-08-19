@@ -30,6 +30,8 @@ npm run board
 
 畫布上的 Card 文字、位置、Before／After 標籤、播放 Card 位置、便條、形狀與自訂連線會在停止操作約一秒後自動保存，也可用右上角「儲存」或 `Cmd/Ctrl+S` 立即原子寫回來源 `board.json`。若檔案已被另一個 agent 修改，Save Bridge 會拒絕覆蓋並要求重新載入。
 
+Save Bridge 不依賴 launcher／Codex task 持續存活；只要 Board 分頁仍透過完整 `BOARD_URL` 發送 heartbeat，它就會維持連線，閒置後才自動退出。完整網址必須保留 `config`、`save`、`saveToken`。如果網址被截短或 Bridge 離線，畫布會顯示阻擋提示並停止安全編輯，不會讓變更默默只留在 React 記憶體。
+
 右上角「版本」會打開獨立版本側欄。Board 版本和圖內的 Before／After 不同：Before／After 說明系統修正前後的行為；版本紀錄保存這張解釋圖本身的演進。版本比較會把差異整理成「新增、移除、修改、移動」，不顯示難讀的 JSON line diff。
 
 只想開發 UI 時可執行：
@@ -52,6 +54,8 @@ npm run dev -- --port 3001
 ```
 
 只存本機、不使用 Git 時，使用 `~/.difftale/projects/<project-id>/boards/<slug>/`。Git 選項只代表本機 branch／commit；除非使用者另外要求，skill 不會 push 或建立 PR。舊的 `.behavior-debug-board` bundle 仍可讀取。
+
+公開的 Difftale skill、fixtures、tests 和文件只使用通用角色與虛構範例，不收錄使用者的產品／公司／repository 名稱、原始碼檔名或路徑、raw code/log、私人 URL、identifier 或截圖。Agent 可以在本機讀取這些證據來理解問題，但預設只把角色、邏輯與使用者可見變化寫進個別 Board bundle；第三方服務品牌與經確認的 logo 不受此限制。
 
 Board schema version 3 可把本地 PNG／JPEG／WebP 畫面當成正式 `screen` node，與其他畫面、API、資料庫或權限服務連線。截圖不是 service card 的附件；它本身就是可播放流程的一部分。
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { inferScreenFrame, prepareBoard, prepareRuntimeBoard, readRasterDimensions, validateBoardConfig } from "../skills/difftale/scripts/difftale.mjs";
+import { inferScreenFrame, prepareBoard, prepareRuntimeBoard, readRasterDimensions, rendererNodeSupport, validateBoardConfig } from "../skills/difftale/scripts/difftale.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const defaultConfigPath = resolve(repoRoot, "skills/difftale/assets/example-board.json");
@@ -64,6 +64,14 @@ test("accepts the bundled Before/After behavior board", () => {
 
 test("accepts the bundled single-source fan-out behavior board", () => {
   assert.equal(validateBoardConfig(structuredClone(fanoutConfig)).title, fanoutConfig.title);
+});
+
+test("renderer runtime preflight requires Node 22.13 or newer", () => {
+  assert.equal(rendererNodeSupport("18.17.0").supported, false);
+  assert.equal(rendererNodeSupport("22.12.0").supported, false);
+  assert.equal(rendererNodeSupport("22.13.0").supported, true);
+  assert.equal(rendererNodeSupport("24.1.0").supported, true);
+  assert.equal(rendererNodeSupport("not-a-version").supported, false);
 });
 
 rejectsMutation("requires a supported config version", (config) => { config.version = 4; }, /version must be 1, 2, or 3/);
