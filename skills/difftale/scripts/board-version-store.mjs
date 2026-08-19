@@ -1,10 +1,10 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { validateBoardConfig } from "./behavior-debug-board.mjs";
+import { validateBoardConfig } from "./difftale.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,18 +45,23 @@ export function semanticBoardDiff(previous, current) {
     const oldNodes = new Map(oldFlow.nodes.map((node) => [node.id, node]));
     const nextNodes = new Map(flow.nodes.map((node) => [node.id, node]));
     for (const node of oldFlow.nodes) {
-      if (!nextNodes.has(node.id)) add("removed", "node", node.id, node.title, "服務卡已移除", flow.id);
+      if (!nextNodes.has(node.id)) add("removed", "node", node.id, node.title, node.kind === "screen" ? "畫面已移除" : "服務卡已移除", flow.id);
     }
     for (const node of flow.nodes) {
       const oldNode = oldNodes.get(node.id);
       if (!oldNode) {
-        add("added", "node", node.id, node.title, "新增服務卡", flow.id);
+        add("added", "node", node.id, node.title, node.kind === "screen" ? "新增畫面" : "新增服務卡", flow.id);
         continue;
       }
       if (!same(without(oldNode, ["position"]), without(node, ["position"]))) {
-        add("changed", "node", node.id, node.title, oldNode.title === node.title ? "服務內容已修改" : `${oldNode.title} → ${node.title}`, flow.id);
+        const detail = oldNode.screenshot !== node.screenshot
+          ? `畫面截圖已更新：${oldNode.screenshot ?? "無"} → ${node.screenshot ?? "無"}`
+          : node.kind === "screen"
+            ? "畫面名稱、路徑、裝置外框或說明已修改"
+            : oldNode.title === node.title ? "服務內容已修改" : `${oldNode.title} → ${node.title}`;
+        add("changed", "node", node.id, node.title, detail, flow.id);
       }
-      if (!same(oldNode.position, node.position)) add("moved", "node", node.id, node.title, "服務卡位置已調整", flow.id);
+      if (!same(oldNode.position, node.position)) add("moved", "node", node.id, node.title, node.kind === "screen" ? "畫面位置已調整" : "服務卡位置已調整", flow.id);
     }
 
     const oldEdges = new Map(oldFlow.edges.map((edge) => [edge.id, edge]));
@@ -117,11 +122,50 @@ async function gitContext(configPath) {
 
 function validGitBundle(context) {
   const segments = context.repoPath.split(/[\\/]/);
-  return segments.length >= 4 && segments.slice(0, 2).join("/") === ".behavior-debug-board/boards";
+  const boardRoot = segments.slice(0, 2).join("/");
+  return segments.length >= 4 && [".difftale/boards", ".behavior-debug-board/boards"].includes(boardRoot);
 }
 
 function versionDirectory(configPath) {
   return resolve(dirname(configPath), ".versions");
+}
+
+function referencedLocalAssets(config) {
+  return [...new Set(config.flows.flatMap((flow) => flow.nodes.flatMap((node) => [node.logo, node.screenshot])
+    .filter((asset) => typeof asset === "string" && asset.startsWith("assets/"))))];
+}
+
+function safeChild(root, child, label) {
+  const absolute = resolve(root, child);
+  const childRelative = relative(root, absolute);
+  if (!childRelative || childRelative.startsWith("..") || childRelative.startsWith("/") || childRelative.startsWith("\\")) {
+    throw new Error(`${label} escapes its bundle: ${child}`);
+  }
+  return absolute;
+}
+
+async function copyRevisionAssets(config, configPath, destinationRoot) {
+  const bundleRoot = await realpath(dirname(configPath));
+  for (const asset of referencedLocalAssets(config)) {
+    const sourcePath = await realpath(safeChild(bundleRoot, asset, "board asset"));
+    const sourceRelative = relative(bundleRoot, sourcePath);
+    if (!sourceRelative || sourceRelative.startsWith("..")) throw new Error(`board asset escapes its bundle: ${asset}`);
+    const destinationPath = safeChild(destinationRoot, asset, "version asset");
+    await mkdir(dirname(destinationPath), { recursive: true, mode: 0o700 });
+    await copyFile(sourcePath, destinationPath);
+  }
+}
+
+async function restoreRevisionAssets(configPath, revisionFile, config) {
+  const snapshotRoot = dirname(revisionFile);
+  if (snapshotRoot === versionDirectory(configPath)) return; // Legacy flat revisions did not snapshot assets.
+  const bundleRoot = dirname(configPath);
+  for (const asset of referencedLocalAssets(config)) {
+    const sourcePath = safeChild(snapshotRoot, asset, "version asset");
+    const destinationPath = safeChild(bundleRoot, asset, "board asset");
+    await mkdir(dirname(destinationPath), { recursive: true });
+    await copyFile(sourcePath, destinationPath);
+  }
 }
 
 async function readLocalIndex(configPath) {
@@ -194,9 +238,9 @@ export async function readBoardRevision({ configPath, revisionId, storageMode = 
   if (storageMode !== "local" || !revisionId.startsWith("local:")) throw new Error("revision does not match the selected storage mode");
   const metadata = (await readLocalIndex(absoluteConfigPath)).find((revision) => revision.id === revisionId);
   if (!metadata) throw new Error("local board revision not found");
-  const safeFile = basename(metadata.file ?? "");
-  if (!safeFile || safeFile !== metadata.file) throw new Error("invalid local board revision path");
-  return validateBoardConfig(JSON.parse(await readFile(resolve(versionDirectory(absoluteConfigPath), safeFile), "utf8")));
+  if (typeof metadata.file !== "string" || !metadata.file) throw new Error("invalid local board revision path");
+  const revisionFile = safeChild(versionDirectory(absoluteConfigPath), metadata.file, "local board revision");
+  return validateBoardConfig(JSON.parse(await readFile(revisionFile, "utf8")));
 }
 
 async function createLocalRevision(configPath, title, { allowUnchanged = false } = {}) {
@@ -206,18 +250,21 @@ async function createLocalRevision(configPath, title, { allowUnchanged = false }
   if (!allowUnchanged && index[0]?.sha256 === hash) throw new Error("目前 Board 與最新版本相同");
   const createdAt = new Date().toISOString();
   const identifier = `${createdAt.replace(/[:.]/g, "-")}-${hash.slice(0, 12)}-${randomBytes(3).toString("hex")}`;
-  const file = `${identifier}.json`;
+  const file = `${identifier}/board.json`;
   const revision = { id: `local:${identifier}`, source: "local", createdAt, title, sha256: hash, file };
   const directory = versionDirectory(configPath);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await writeAtomically(resolve(directory, file), source);
+  const revisionFile = safeChild(directory, file, "local board revision");
+  await mkdir(dirname(revisionFile), { recursive: true, mode: 0o700 });
+  await writeAtomically(revisionFile, source);
+  await copyRevisionAssets(JSON.parse(source), configPath, dirname(revisionFile));
   await writeAtomically(resolve(directory, "index.json"), `${JSON.stringify([revision, ...index], null, 2)}\n`);
   return revision;
 }
 
 async function createGitRevision(configPath, title) {
   const context = await gitContext(configPath);
-  if (!context || !validGitBundle(context)) throw new Error("Git 版本只支援 .behavior-debug-board/boards/<slug>/ bundle");
+  if (!context || !validGitBundle(context)) throw new Error("Git 版本只支援 .difftale/boards/<slug>/ bundle（舊版 .behavior-debug-board 路徑仍相容）");
   const { stdout: status } = await execFileAsync("git", ["-C", context.root, "status", "--porcelain", "--", context.bundlePath]);
   if (!status.trim()) throw new Error("目前 Board 沒有可建立版本的變更");
   const slug = basename(context.bundlePath).replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "board";
@@ -258,7 +305,13 @@ export async function restoreBoardRevision({ configPath, revisionId, storageMode
   const restored = await readBoardRevision({ configPath: absoluteConfigPath, revisionId, storageMode });
   const restoredSource = canonicalBoardSource(restored);
   if (restoredSource === currentSource) return { restored, sha256: currentHash, diff: semanticBoardDiff(current, restored), unchanged: true };
-  if (storageMode === "local") await createLocalRevision(absoluteConfigPath, "還原前自動備份", { allowUnchanged: true });
+  if (storageMode === "local") {
+    await createLocalRevision(absoluteConfigPath, "還原前自動備份", { allowUnchanged: true });
+    const metadata = (await readLocalIndex(absoluteConfigPath)).find((revision) => revision.id === revisionId);
+    if (!metadata || typeof metadata.file !== "string") throw new Error("local board revision not found");
+    const revisionFile = safeChild(versionDirectory(absoluteConfigPath), metadata.file, "local board revision");
+    await restoreRevisionAssets(absoluteConfigPath, revisionFile, restored);
+  }
   await writeAtomically(absoluteConfigPath, restoredSource);
   return { restored, sha256: boardSha256(restoredSource), diff: semanticBoardDiff(current, restored), unchanged: false };
 }

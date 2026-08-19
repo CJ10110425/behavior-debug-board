@@ -1,6 +1,7 @@
 export type BoardMode = "before" | "after";
 export type BoardStatus = "idle" | "running" | "success" | "error" | "blocked";
-export type BoardNodeKind = "client" | "rules" | "database" | "service";
+export type BoardNodeKind = "client" | "rules" | "database" | "service" | "screen";
+export type BoardScreenFrame = "browser" | "mobile" | "app";
 export type BoardEdgeSemantic = "request" | "query" | "response" | "error";
 export type BoardCategoryIcon =
   | "web-app"
@@ -30,6 +31,9 @@ export type BoardNodeConfig = {
   kind: BoardNodeKind;
   logo?: string;
   categoryIcon?: BoardCategoryIcon;
+  screenshot?: string;
+  frame?: BoardScreenFrame;
+  route?: string;
   changed?: boolean;
 };
 
@@ -79,7 +83,7 @@ export type BoardCanvasEdgeConfig = {
 };
 
 export type BoardConfig = {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   title: string;
   flows: [BoardFlowConfig, BoardFlowConfig];
   canvas?: {

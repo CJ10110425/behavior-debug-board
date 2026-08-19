@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, resolve } from "node:path";
 
-import { makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./behavior-debug-board.mjs";
+import { makeBoardUrl, prepareRuntimeBoard, startBoardServer } from "./difftale.mjs";
 import { startBoardSaveServer } from "./save-board-server.mjs";
 
-const renderProtocol = "3";
+const renderProtocol = "5";
 
 function ensure(condition, message) {
   if (!condition) throw new Error(message);
@@ -54,6 +54,19 @@ async function saveScreenshot(page, requestedPath) {
   };
 }
 
+async function copyQaBoardAssets(config, sourceConfigPath, qaConfigPath) {
+  const sourceDirectory = dirname(sourceConfigPath);
+  const qaDirectory = dirname(qaConfigPath);
+  const assets = [...new Set(config.flows.flatMap((flow) => (
+    flow.nodes.flatMap((node) => [node.logo, node.screenshot]).filter((asset) => asset?.startsWith("assets/"))
+  )))];
+  for (const asset of assets) {
+    const destination = resolve(qaDirectory, asset);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(resolve(sourceDirectory, asset), destination);
+  }
+}
+
 async function launchBrowser(chromium) {
   try {
     return await chromium.launch({ channel: "chrome", headless: true });
@@ -78,6 +91,7 @@ async function seekFlow(page, flow, step) {
 
 function singleSourceFanouts(config) {
   return config.flows.flatMap((flow) => {
+    if (flow.nodes.some((node) => node.kind === "screen")) return [];
     if (flow.nodes.length !== 3) return [];
     const forwardEdges = flow.edges.filter((edge) => edge.direction === "forward");
     const sources = [...new Set(forwardEdges.map((edge) => edge.source))];
@@ -127,6 +141,29 @@ async function verifyFanoutLayout(page, config, checks) {
   checks["fanout-layout"] = true;
   checks["fanout-curves"] = true;
   checks["fanout-label-lanes"] = true;
+}
+
+async function verifyFlowClearance(page, checks) {
+  const flowBounds = {};
+  for (const flow of ["before", "after"]) {
+    const cardBoxes = await page.locator(`[data-testid="service-node"][data-flow="${flow}"]`).evaluateAll((elements) => elements.map((element) => {
+      const box = element.getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom };
+    }));
+    const playbackBox = await page.locator(`[data-testid="playback-card"][data-flow="${flow}"]`).evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom };
+    });
+    const cardBottom = Math.max(...cardBoxes.map((box) => box.bottom));
+    ensure(cardBottom + 12 <= playbackBox.top, `${flow} playback card overlaps a visual node`);
+    flowBounds[flow] = {
+      top: Math.min(...cardBoxes.map((box) => box.top)),
+      bottom: Math.max(playbackBox.bottom, cardBottom),
+    };
+  }
+  ensure(flowBounds.before.bottom + 20 <= flowBounds.after.top, "Before and After flows overlap");
+  checks["playback-clearance"] = true;
+  checks["flow-clearance"] = true;
 }
 
 async function runFullInteractionQa(page, config, flow, checks) {
@@ -185,7 +222,7 @@ async function runFullInteractionQa(page, config, flow, checks) {
   checks["card-text-editing"] = true;
 
   const draggable = page.locator(".react-flow__node-debugNode").first();
-  const dragSurface = draggable.locator(".debug-node__topline");
+  const dragSurface = draggable.locator(".debug-node__topline, .screen-card__meta").first();
   const box = await dragSurface.boundingBox();
   ensure(box, "service node drag surface has no bounding box");
   const beforeDrag = await draggable.evaluate((element) => getComputedStyle(element).transform);
@@ -261,9 +298,11 @@ export async function runBoardQa(options) {
 
   const screenshotPath = options.screenshotPath ?? resolve(options.repoRoot, "outputs/qa", prepared.configHash, "board.jpg");
   const reportPath = options.reportPath ?? resolve(dirname(screenshotPath), "qa-report.json");
-  const qaSavePath = resolve(dirname(screenshotPath), "qa-board.local.json");
+  const qaRuntimeRoot = resolve(dirname(screenshotPath), ".qa-runtime", `${prepared.configHash}-${randomBytes(6).toString("hex")}`);
+  const qaSavePath = resolve(qaRuntimeRoot, "board.json");
   await mkdir(dirname(qaSavePath), { recursive: true });
   await writeFile(qaSavePath, prepared.source, "utf8");
+  await copyQaBoardAssets(prepared.config, prepared.configPath, qaSavePath);
   const saveToken = randomBytes(24).toString("hex");
   const saveBridge = await startBoardSaveServer({ configPath: qaSavePath, token: saveToken });
   const url = makeBoardUrl(server.origin, prepared.configHash, {
@@ -275,6 +314,8 @@ export async function runBoardQa(options) {
   });
   const expected = {
     serviceNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.length, 0),
+    screenNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.filter((node) => node.kind === "screen").length, 0),
+    mobileScreens: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.filter((node) => node.kind === "screen" && node.frame === "mobile").length, 0),
     edges: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
     labels: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
     playbackCards: prepared.config.flows.length,
@@ -310,21 +351,41 @@ export async function runBoardQa(options) {
 
     actual = {
       serviceNodes: await page.locator('[data-testid="service-node"]').count(),
+      screenNodes: await page.locator('[data-testid="service-node"][data-node-kind="screen"]').count(),
+      mobileScreens: await page.locator('[data-testid="service-node"][data-screen-frame="mobile"]').count(),
       edges: await page.locator(".react-flow__edge").count(),
       labels: await page.locator('[data-testid="edge-label"]').count(),
       playbackCards: await page.locator('[data-testid="playback-card"]').count(),
     };
     ensure(actual.serviceNodes === expected.serviceNodes, `rendered ${actual.serviceNodes} service nodes; expected ${expected.serviceNodes}`);
+    ensure(actual.screenNodes === expected.screenNodes, `rendered ${actual.screenNodes} screen nodes; expected ${expected.screenNodes}`);
+    ensure(actual.mobileScreens === expected.mobileScreens, `rendered ${actual.mobileScreens} mobile screen nodes; expected ${expected.mobileScreens}`);
     ensure(actual.edges === expected.edges, `rendered ${actual.edges} edges; expected ${expected.edges}`);
     ensure(actual.labels === expected.labels, `rendered ${actual.labels} labels; expected ${expected.labels}`);
     ensure(actual.playbackCards === expected.playbackCards, `rendered ${actual.playbackCards} playback cards; expected ${expected.playbackCards}`);
     ensure(await page.locator('[data-testid="service-title-input"]').count() === expected.serviceNodes, "not every service card has an editable title");
     ensure(await page.locator('[data-testid="service-description-input"]').count() === expected.serviceNodes, "not every service card has an editable description");
     checks["service-nodes"] = true;
+    if (expected.screenNodes > 0) {
+      const screenshotState = await page.locator('[data-testid="screen-preview"] img').evaluateAll((images) => images.map((image) => ({
+        complete: image instanceof HTMLImageElement && image.complete,
+        naturalWidth: image instanceof HTMLImageElement ? image.naturalWidth : 0,
+        source: image instanceof HTMLImageElement ? image.currentSrc : "",
+      })));
+      ensure(screenshotState.length === expected.screenNodes, "not every screen node rendered a screenshot");
+      ensure(screenshotState.every((image) => image.complete && image.naturalWidth > 0), "one or more screen screenshots failed to load");
+      ensure(screenshotState.every((image) => image.source.includes(`/runtime/assets/${prepared.configHash}/`)), "screen screenshot did not load from the immutable local runtime bundle");
+      ensure(await page.locator('[data-testid="service-node"][data-node-kind="screen"] .debug-node__detail').count() === 0, "screen cards rendered the long service detail footer");
+      checks["screen-nodes"] = true;
+      checks["screen-assets"] = true;
+      checks["screen-frame-layout"] = true;
+      checks["concise-screen-copy"] = true;
+    }
     checks["editable-card-copy"] = true;
     checks.edges = true;
     checks.labels = true;
     checks.playback = true;
+    await verifyFlowClearance(page, checks);
     ensure(await page.locator('[data-testid="board-save-button"]').isEnabled(), "local save button is not connected");
     ensure(await page.locator('[data-testid="board-version-toggle"]').isEnabled(), "local version history is not connected");
     await page.getByText("只存本機 · 不建立 Git commit", { exact: true }).waitFor({ state: "visible" });
@@ -439,5 +500,6 @@ export async function runBoardQa(options) {
     await browser?.close();
     await saveBridge.close();
     if (!server.reused) await server.stop();
+    await rm(qaRuntimeRoot, { recursive: true, force: true });
   }
 }

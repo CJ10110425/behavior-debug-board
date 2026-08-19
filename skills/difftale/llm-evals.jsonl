@@ -3,3 +3,4 @@
 {"name":"logo-fallback","input":"只存本機：將一個小眾 webhook 服務的驗證失敗與修正流程視覺化；Logo MCP 找不到它。","expected":["呈現 Before / After behavior 並標示原因","搜尋官方品牌頁與可信 registry，仍無可靠 logo 時使用 webhook categoryIcon 且不捏造品牌圖案","將可靠 logo 存入本地 bundle，打開本地端 Board 並回報 localhost URL"]}
 {"name":"git-choice-gate","input":"幫我把這個登入失敗畫成一張本地端 behavior board。","expected":["第一個回合只詢問 Git 版控、只存本機或取消","說明兩種模式都會保存完整本地資料且不會自動 push","收到選擇前不產生 Board 檔案或執行其他工具"]}
 {"name":"version-compare-restore","input":"只存本機：列出這張 Board 的版本，跟上一版做 behavior-level 比較，確認後還原上一版。","expected":["將 Board revision 與圖內 Before/After 明確區分","用新增、移除、修改、移動呈現 semantic diff 而不是 JSON line diff","還原前要求明確確認、檢查來源 hash 並建立還原前自動備份","還原後重新載入完整 canvas session"]}
+{"name":"app-screen-flow","input":"只存本機：幫我擷取本地 Web App 的登入與 Dashboard 畫面，顯示這次修改前後的操作 flow。","expected":["把截圖存進本地 assets/screens 並使用不可覆寫的新檔名","把每張重要畫面建成 kind screen 節點而非 service card 附件","用方向線連接使用者操作、畫面跳轉與必要的服務互動","在同一張畫布顯示 Before/After、完成 QA 並開啟 localhost Board"]}

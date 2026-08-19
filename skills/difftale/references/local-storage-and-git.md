@@ -21,7 +21,7 @@ If the request does not already state a preference, ask this before gathering th
 Store a self-contained bundle under the current Git root:
 
 ```text
-.behavior-debug-board/boards/<slug>/
+.difftale/boards/<slug>/
 ├── board.json
 └── assets/
     └── <brand>.svg
@@ -42,7 +42,7 @@ If no Git root exists, ask one follow-up choice: initialize Git in the explicitl
 Store the same bundle outside Git:
 
 ```text
-~/.behavior-debug-board/projects/<project-id>/boards/<slug>/
+~/.difftale/projects/<project-id>/boards/<slug>/
 ├── board.json
 ├── assets/
 └── .versions/
@@ -55,10 +55,11 @@ Derive `<project-id>` from the project path plus a short hash so projects with t
 Persist:
 
 - flow and service-card copy;
+- screen-card copy, route, frame, and immutable screenshot asset path;
 - service, group, label, and playback-card positions;
 - directional edges and timeline steps;
 - canvas text, notes, shapes, and custom edges;
-- board-local logo SVGs and their provenance notes.
+- board-local screenshots, logo SVGs, and their provenance notes.
 
 Do not persist transient renderer state:
 

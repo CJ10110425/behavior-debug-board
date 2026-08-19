@@ -13,10 +13,10 @@ import {
   listBoardRevisions,
   restoreBoardRevision,
   semanticBoardDiff,
-} from "../skills/behavior-debug-board/scripts/board-version-store.mjs";
+} from "../skills/difftale/scripts/board-version-store.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const examplePath = join(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
+const examplePath = join(repoRoot, "skills/difftale/assets/example-board.json");
 
 function git(cwd, args) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8" });
@@ -43,6 +43,22 @@ test("semantic Board diff separates behavior/content changes from layout movemen
   assert.ok(diff.changes.some((change) => change.entity === "node" && change.type === "changed"));
   assert.ok(diff.changes.some((change) => change.entity === "node" && change.type === "moved"));
   assert.ok(diff.changes.some((change) => change.entity === "canvas-item" && change.type === "added"));
+});
+
+test("semantic Board diff describes changed screenshots as screen changes", async () => {
+  const previous = JSON.parse(await readFile(examplePath, "utf8"));
+  previous.version = 3;
+  const oldScreen = previous.flows[1].nodes[0];
+  oldScreen.kind = "screen";
+  oldScreen.screenshot = "assets/screens/dashboard-old.png";
+  oldScreen.frame = "browser";
+  delete oldScreen.categoryIcon;
+  const current = structuredClone(previous);
+  current.flows[1].nodes[0].screenshot = "assets/screens/dashboard-new.png";
+
+  const diff = semanticBoardDiff(previous, current);
+  assert.equal(diff.summary.changed, 1);
+  assert.match(diff.changes[0].detail, /畫面截圖已更新/);
 });
 
 test("local Board versions can be created, compared, and restored with a safety snapshot", async (context) => {
@@ -78,10 +94,44 @@ test("local Board versions can be created, compared, and restored with a safety 
   assert.equal(afterRestore.revisions[0].title, "還原前自動備份");
 });
 
+test("local Board versions snapshot and restore referenced screen assets", async (context) => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), "difftale-screen-versions-"));
+  context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const bundle = join(temporaryRoot, "demo");
+  const configPath = join(bundle, "board.json");
+  await mkdir(join(bundle, "assets", "screens"), { recursive: true });
+  const original = JSON.parse(await readFile(examplePath, "utf8"));
+  original.version = 3;
+  const screen = original.flows[1].nodes[0];
+  screen.kind = "screen";
+  screen.screenshot = "assets/screens/dashboard-old.png";
+  screen.frame = "browser";
+  delete screen.categoryIcon;
+  await writeFile(join(bundle, screen.screenshot), "old pixels");
+  await writeFile(configPath, canonicalBoardSource(original));
+
+  const revision = await createBoardRevision({ configPath, storageMode: "local", title: "舊 Dashboard" });
+  await rm(join(bundle, screen.screenshot));
+  const changed = structuredClone(original);
+  changed.flows[1].nodes[0].screenshot = "assets/screens/dashboard-new.png";
+  await writeFile(join(bundle, changed.flows[1].nodes[0].screenshot), "new pixels");
+  await writeFile(configPath, canonicalBoardSource(changed));
+
+  await restoreBoardRevision({
+    configPath,
+    storageMode: "local",
+    revisionId: revision.id,
+    baseHash: boardSha256(canonicalBoardSource(changed)),
+  });
+  assert.equal(await readFile(join(bundle, screen.screenshot), "utf8"), "old pixels");
+  const index = JSON.parse(await readFile(join(bundle, ".versions", "index.json"), "utf8"));
+  assert.match(index.at(-1).file, /\/board\.json$/);
+});
+
 test("Git Board versions commit only the Board bundle and preserve unrelated staged work", async (context) => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "board-git-versions-"));
   context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
-  const bundle = join(temporaryRoot, ".behavior-debug-board", "boards", "firebase-rules");
+  const bundle = join(temporaryRoot, ".difftale", "boards", "firebase-rules");
   const configPath = join(bundle, "board.json");
   await mkdir(bundle, { recursive: true });
   const original = JSON.parse(await readFile(examplePath, "utf8"));
@@ -103,7 +153,7 @@ test("Git Board versions commit only the Board bundle and preserve unrelated sta
 
   const revision = await createBoardRevision({ configPath, storageMode: "git", title: "記錄修正行為" });
   assert.equal(revision.source, "git");
-  assert.equal(git(temporaryRoot, ["show", "--pretty=format:", "--name-only", "HEAD"]), ".behavior-debug-board/boards/firebase-rules/board.json");
+  assert.equal(git(temporaryRoot, ["show", "--pretty=format:", "--name-only", "HEAD"]), ".difftale/boards/firebase-rules/board.json");
   assert.equal(git(temporaryRoot, ["diff", "--cached", "--name-only"]), "unrelated.txt");
 
   const history = await listBoardRevisions({ configPath, storageMode: "git" });
@@ -120,5 +170,5 @@ test("Git Board versions commit only the Board bundle and preserve unrelated sta
     baseHash: boardSha256(currentSource),
   });
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).title, original.title);
-  assert.match(git(temporaryRoot, ["status", "--short", "--", ".behavior-debug-board/boards/firebase-rules"]), /^M /);
+  assert.match(git(temporaryRoot, ["status", "--short", "--", ".difftale/boards/firebase-rules"]), /^M /);
 });

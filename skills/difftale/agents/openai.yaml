@@ -1,0 +1,11 @@
+interface:
+  display_name: "Difftale"
+  short_description: "Replay and version app screen, flow, and behavior changes"
+  default_prompt: "Use $difftale to show what changed across these app screens and flows in a local versioned Before/After Board."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "thesvg"
+      description: "Search and fetch exact brand or service SVG logos"
+policy:
+  allow_implicit_invocation: true

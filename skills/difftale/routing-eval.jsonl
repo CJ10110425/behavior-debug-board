@@ -6,5 +6,7 @@
 {"prompt":"我剛剛移動了 debug card，幫我保存並 commit 這張圖。","should_route":true,"reason":"需要持久化 canvas layout 並版控"}
 {"prompt":"把這張 Board 跟上一版比較，告訴我流程、Card 和位置分別改了什麼。","should_route":true,"reason":"需要 Board semantic version diff"}
 {"prompt":"恢復 Firebase debug Board 的上一個本機版本。","should_route":true,"reason":"需要安全還原 Board revision"}
+{"prompt":"這次 AI 改了很多 App 畫面，把登入、Loading 和 Dashboard 的截圖串成 Before / After flow。","should_route":true,"reason":"需要把 app screenshots 建成可播放 screen nodes"}
+{"prompt":"我看不懂 Git diff，直接告訴我 Web App 畫面和使用者操作路徑改了什麼。","should_route":true,"reason":"需要 visual behavior diff 與 screen flow"}
 {"prompt":"Review this pull request and identify race conditions.","should_route":false,"reason":"純 code review 不需要 debug board"}
 {"prompt":"幫我做一張靜態系統架構簡報。","should_route":false,"reason":"靜態簡報應使用 presentation/diagram 工具"}

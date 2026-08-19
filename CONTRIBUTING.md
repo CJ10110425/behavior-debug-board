@@ -1,6 +1,6 @@
 # 貢獻指南
 
-謝謝你想讓 Behavior Debug Board 更好。這個專案歡迎新的 debug flow、服務 logo、互動改善、測試與文件修正。
+謝謝你想讓 Difftale 更好。這個專案歡迎新的畫面／服務 flow、品牌 logo、互動改善、測試與文件修正。
 
 ## 外部貢獻流程
 
@@ -49,15 +49,17 @@ GitHub 官方流程可參考 [Contributing to a project](https://docs.github.com
 ## Board 不可破壞的語意
 
 - Before / After 必須位於同一張畫布。
+- App／Web／Mobile 截圖必須使用本地 `screen` node，不能只當 service card 附件或外部 hotlink。
 - 一條 edge 只表示一個方向；請求與回傳不得共用同一條線。
 - 播放前就要顯示所有線、箭頭與文字，動畫只負責強調目前步驟。
 - 預設說明 behavior、原因與使用者結果，不展示 commit 或 code diff。
 - 品牌 logo 保留官方顏色與比例，並附來源與使用說明。
 - Skill 成功時必須啟動並打開 localhost Board。
+- 截圖要使用不覆寫的檔名；畫面改變時建立新資產，讓 semantic diff 能指出哪個畫面變了。
 
 ## Logo 貢獻
 
-優先依 [Logo MCP workflow](skills/behavior-debug-board/references/logo-mcp.md) 找 exact product logo；MCP 找不到時搜尋官方品牌頁與可信 registry，再存到 `public/logos/`。完全找不到可靠 logo 時，改用符合服務用途的 `categoryIcon`，不要提交自行生成或猜測的品牌 logo。若增加 skill 的離線 fallback，也同步放入 `skills/behavior-debug-board/assets/logos/`。
+優先依 [Logo MCP workflow](skills/difftale/references/logo-mcp.md) 找 exact product logo；MCP 找不到時搜尋官方品牌頁與可信 registry，再存到 `public/logos/`。完全找不到可靠 logo 時，改用符合服務用途的 `categoryIcon`，不要提交自行生成或猜測的品牌 logo。若增加 skill 的離線 fallback，也同步放入 `skills/difftale/assets/logos/`。
 
 Pull Request 必須補上：
 

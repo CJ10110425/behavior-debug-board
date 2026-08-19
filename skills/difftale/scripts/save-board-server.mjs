@@ -7,7 +7,7 @@ import { dirname, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
-import { validateBoardConfig } from "./behavior-debug-board.mjs";
+import { validateBoardConfig } from "./difftale.mjs";
 import {
   boardSha256,
   canonicalBoardSource,

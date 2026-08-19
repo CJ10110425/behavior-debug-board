@@ -6,10 +6,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { startBoardSaveServer } from "../skills/behavior-debug-board/scripts/save-board-server.mjs";
+import { startBoardSaveServer } from "../skills/difftale/scripts/save-board-server.mjs";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
-const examplePath = join(repoRoot, "skills/behavior-debug-board/assets/example-board.json");
+const examplePath = join(repoRoot, "skills/difftale/assets/example-board.json");
 
 function canonical(config) {
   return `${JSON.stringify(config, null, 2)}\n`;
@@ -22,16 +22,16 @@ function sha256(source) {
 test("local save bridge atomically persists a board and reports Git state", async (context) => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "behavior-board-save-"));
   context.after(() => rm(temporaryRoot, { recursive: true, force: true }));
-  const configPath = join(temporaryRoot, ".behavior-debug-board", "boards", "example.board.json");
+  const configPath = join(temporaryRoot, ".difftale", "boards", "example.board.json");
   const original = JSON.parse(await readFile(examplePath, "utf8"));
-  await mkdir(join(temporaryRoot, ".behavior-debug-board", "boards"), { recursive: true });
+  await mkdir(join(temporaryRoot, ".difftale", "boards"), { recursive: true });
   await writeFile(configPath, canonical(original), "utf8");
 
   for (const args of [
     ["init"],
     ["config", "user.email", "board@example.local"],
     ["config", "user.name", "Board Test"],
-    ["add", ".behavior-debug-board/boards/example.board.json"],
+    ["add", ".difftale/boards/example.board.json"],
     ["commit", "-m", "add board"],
   ]) {
     const command = spawnSync("git", args, { cwd: temporaryRoot, encoding: "utf8" });

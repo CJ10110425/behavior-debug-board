@@ -29,7 +29,9 @@ import type {
   BoardEdgeSemantic,
   BoardFlowConfig,
   BoardMode,
+  BoardNodeConfig,
   BoardNodeKind,
+  BoardScreenFrame,
   BoardStatus,
 } from "./board-schema";
 
@@ -70,6 +72,9 @@ type DebugNodeData = {
   kind: BoardNodeKind;
   logo?: string;
   categoryIcon?: BoardCategoryIcon;
+  screenshot?: string;
+  frame?: BoardScreenFrame;
+  route?: string;
   status: NodeStatus;
   changed?: boolean;
   detail: string;
@@ -161,8 +166,10 @@ type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
 type SingleSourceFanout = { source: string; targets: [string, string] };
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
-const renderProtocol = "3";
-const debugNodeWidth = 226;
+const renderProtocol = "5";
+const serviceNodeWidth = 226;
+const browserScreenNodeWidth = 380;
+const mobileScreenNodeWidth = 230;
 const minimumNodeGap = 84;
 const edgeLabelChromeWidth = 26;
 const edgeLabelSafetyGap = 24;
@@ -192,6 +199,7 @@ const defaultCategoryIcon: Record<BoardNodeKind, BoardCategoryIcon> = {
   rules: "security",
   database: "database",
   service: "service",
+  screen: "web-app",
 };
 
 const statusLabel: Record<NodeStatus, string> = {
@@ -271,51 +279,103 @@ function TextLabelCard({ id, data }: NodeProps<LabelNode>) {
   );
 }
 
+function NodeStatusIndicator({ status }: { status: NodeStatus }) {
+  return (
+    <span className={`node-status node-status--${status}`} aria-live="polite">
+      {status === "running"
+        ? <span className="node-status__spinner" aria-hidden="true" />
+        : <span className="node-status__dot" />}
+      {statusLabel[status]}
+    </span>
+  );
+}
+
 function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
   const { updateNodeData } = useReactFlow<DebugNode, PacketEdge>();
   const updateCopy = (field: "title" | "subtitle", value: string) => updateNodeData(id, { [field]: value });
+  const isScreen = data.kind === "screen";
+  const screenFrame = data.frame ?? "browser";
+  const screenFrameLabel = screenFrame === "mobile" ? "Mobile" : screenFrame === "app" ? "App" : "Web";
 
   return (
     <div
-      className={`debug-node debug-node--${data.kind} debug-node--${data.status}`}
+      className={`debug-node debug-node--${data.kind} debug-node--${data.status}${isScreen ? ` debug-node--screen-${screenFrame}` : ""}`}
       data-testid="service-node"
+      data-node-kind={data.kind}
+      data-screen-frame={isScreen ? screenFrame : undefined}
       data-flow={data.mode}
       data-node-id={data.nodeId}
       data-status={data.status}
     >
       <Handle id="forward-in" type="target" position={Position.Left} className="debug-handle" style={{ top: "42%" }} />
       <Handle id="return-out" type="source" position={Position.Left} className="debug-handle" style={{ top: "72%" }} />
-      <div className="debug-node__topline">
-        <div className="debug-node__icon"><ServiceIcon data={data} /></div>
-        <span className={`node-status node-status--${data.status}`} aria-live="polite">
-          {data.status === "running"
-            ? <span className="node-status__spinner" aria-hidden="true" />
-            : <span className="node-status__dot" />}
-          {statusLabel[data.status]}
-        </span>
-      </div>
-      <div className="debug-node__body">
-        <input
-          className="debug-node__copy debug-node__copy--title nodrag nowheel nopan"
-          data-testid="service-title-input"
-          value={data.title}
-          aria-label={`${data.mode} ${data.nodeId} card title`}
-          onChange={(event) => updateCopy("title", event.target.value)}
-          onKeyDown={(event) => event.stopPropagation()}
-        />
-        <input
-          className="debug-node__copy debug-node__copy--description nodrag nowheel nopan"
-          data-testid="service-description-input"
-          value={data.subtitle}
-          aria-label={`${data.mode} ${data.nodeId} card description`}
-          onChange={(event) => updateCopy("subtitle", event.target.value)}
-          onKeyDown={(event) => event.stopPropagation()}
-        />
-      </div>
-      <div className="debug-node__detail">
-        {data.changed ? <span className="changed-badge">修改位置</span> : null}
-        <span>{data.detail}</span>
-      </div>
+      {isScreen ? (
+        <>
+          <div className="screen-card__header">
+            <div className="screen-card__meta">
+              <span className="screen-card__frame-label">{screenFrameLabel}</span>
+              {data.changed ? <span className="screen-card__changed">已修改</span> : null}
+              <NodeStatusIndicator status={data.status} />
+            </div>
+            <input
+              className="screen-card__copy screen-card__copy--title nodrag nowheel nopan"
+              data-testid="service-title-input"
+              value={data.title}
+              aria-label={`${data.mode} ${data.nodeId} card title`}
+              onChange={(event) => updateCopy("title", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+            <input
+              className="screen-card__copy screen-card__copy--description nodrag nowheel nopan"
+              data-testid="service-description-input"
+              value={data.subtitle}
+              aria-label={`${data.mode} ${data.nodeId} card description`}
+              onChange={(event) => updateCopy("subtitle", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+          </div>
+          <figure className={`screen-preview screen-preview--${screenFrame}`} data-testid="screen-preview">
+          {screenFrame !== "mobile" ? (
+            <figcaption className="screen-preview__chrome">
+              {screenFrame === "browser" ? <span className="screen-preview__dots" aria-hidden="true"><i /><i /><i /></span> : null}
+              <span>{data.route || (screenFrame === "app" ? "Desktop App" : "Web")}</span>
+            </figcaption>
+          ) : <span className="screen-preview__island" aria-hidden="true" />}
+          {/* Board screenshots are durable local assets copied into the hash-addressed runtime bundle. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="screen-preview__image nodrag" src={data.screenshot} alt={`${data.title} 畫面截圖`} draggable={false} />
+          </figure>
+        </>
+      ) : (
+        <>
+          <div className="debug-node__topline">
+            <div className="debug-node__icon"><ServiceIcon data={data} /></div>
+            <NodeStatusIndicator status={data.status} />
+          </div>
+          <div className="debug-node__body">
+            <input
+              className="debug-node__copy debug-node__copy--title nodrag nowheel nopan"
+              data-testid="service-title-input"
+              value={data.title}
+              aria-label={`${data.mode} ${data.nodeId} card title`}
+              onChange={(event) => updateCopy("title", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+            <input
+              className="debug-node__copy debug-node__copy--description nodrag nowheel nopan"
+              data-testid="service-description-input"
+              value={data.subtitle}
+              aria-label={`${data.mode} ${data.nodeId} card description`}
+              onChange={(event) => updateCopy("subtitle", event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+            />
+          </div>
+          <div className="debug-node__detail">
+            {data.changed ? <span className="changed-badge">修改位置</span> : null}
+            <span>{data.detail}</span>
+          </div>
+        </>
+      )}
       <Handle id="forward-out" type="source" position={Position.Right} className="debug-handle" style={{ top: "42%" }} />
       <Handle id="return-in" type="target" position={Position.Right} className="debug-handle" style={{ top: "72%" }} />
     </div>
@@ -563,6 +623,10 @@ function sequenceFor(flowConfigByMode: FlowConfigByMode, mode: Mode) {
   return flowConfigByMode[mode].steps;
 }
 
+function runtimeAssetUrl(asset: string | undefined, assetBase?: string) {
+  return asset?.startsWith("assets/") && assetBase ? `${assetBase}/${asset.slice("assets/".length)}` : asset;
+}
+
 function debugData(flowConfigByMode: FlowConfigByMode, mode: Mode, nodeId: string, runtime: FlowRuntime, assetBase?: string): DebugNodeData {
   const flow = flowConfigByMode[mode];
   const node = flow.nodes.find((candidate) => candidate.id === nodeId);
@@ -574,8 +638,11 @@ function debugData(flowConfigByMode: FlowConfigByMode, mode: Mode, nodeId: strin
     title: node.title,
     subtitle: node.subtitle,
     kind: node.kind,
-    logo: node.logo?.startsWith("assets/") && assetBase ? `${assetBase}/${node.logo.slice("assets/".length)}` : node.logo,
+    logo: runtimeAssetUrl(node.logo, assetBase),
     categoryIcon: node.categoryIcon,
+    screenshot: runtimeAssetUrl(node.screenshot, assetBase),
+    frame: node.frame,
+    route: node.route,
     status: flow.steps[runtime.step].nodeStatuses[node.id] ?? "idle",
     changed: node.changed,
     detail: node.detail,
@@ -607,6 +674,16 @@ function estimatedEdgeLabelWidth(label: string) {
   return textWidth + edgeLabelChromeWidth;
 }
 
+function nodeWidth(node: BoardNodeConfig) {
+  if (node.kind !== "screen") return serviceNodeWidth;
+  return node.frame === "mobile" ? mobileScreenNodeWidth : browserScreenNodeWidth;
+}
+
+function nodeHeight(node: BoardNodeConfig) {
+  if (node.kind !== "screen") return 150;
+  return node.frame === "mobile" ? 535 : 390;
+}
+
 function nodePositionsForFlow(flow: BoardFlowConfig) {
   const positions = [64];
 
@@ -623,13 +700,14 @@ function nodePositionsForFlow(flow: BoardFlowConfig) {
       ? Math.ceil(Math.max(...labelsBetweenNodes) + edgeLabelSafetyGap)
       : minimumNodeGap;
     const gap = Math.max(minimumNodeGap, requiredLabelGap);
-    positions.push(positions[index] + debugNodeWidth + gap);
+    positions.push(positions[index] + nodeWidth(flow.nodes[index]) + gap);
   }
 
   return positions;
 }
 
 function singleSourceFanout(flow: BoardFlowConfig): SingleSourceFanout | null {
+  if (flow.nodes.some((node) => node.kind === "screen")) return null;
   if (flow.nodes.length !== 3) return null;
 
   const forwardEdges = flow.edges.filter((edge) => edge.direction === "forward");
@@ -644,14 +722,33 @@ function singleSourceFanout(flow: BoardFlowConfig): SingleSourceFanout | null {
   return { source, targets: [targets[0], targets[1]] };
 }
 
+function flowGeometry(flow: BoardFlowConfig) {
+  const nodePositions = nodePositionsForFlow(flow);
+  const fanout = singleSourceFanout(flow);
+  const finalNode = flow.nodes.at(-1)!;
+  const maxNodeHeight = Math.max(...flow.nodes.map(nodeHeight));
+  const groupWidth = fanout ? 1040 : Math.max(1000, nodePositions.at(-1)! + nodeWidth(finalNode) + 64);
+  const playbackY = fanout ? 390 : 78 + maxNodeHeight + 48;
+  const groupHeight = fanout ? 535 : playbackY + 138;
+  return { fanout, groupHeight, groupWidth, nodePositions, playbackY };
+}
+
+function stackedFlowPositions(flowConfigByMode: FlowConfigByMode) {
+  const before = flowConfigByMode.before.position;
+  const minimumAfterY = before.y + flowGeometry(flowConfigByMode.before).groupHeight + 56;
+  return {
+    before,
+    after: {
+      ...flowConfigByMode.after.position,
+      y: Math.max(flowConfigByMode.after.position.y, minimumAfterY),
+    },
+  };
+}
+
 function flowNodes(flowConfigByMode: FlowConfigByMode, mode: Mode, groupPosition: { x: number; y: number }, runtime: FlowRuntime, actions: PlaybackActions, assetBase?: string): CanvasNode[] {
   const flow = flowConfigByMode[mode];
   const groupId = `${mode}-group`;
-  const nodePositions = nodePositionsForFlow(flow);
-  const fanout = singleSourceFanout(flow);
-  const groupWidth = fanout ? 1040 : Math.max(1000, nodePositions.at(-1)! + debugNodeWidth + 64);
-  const groupHeight = fanout ? 535 : 390;
-  const playbackY = fanout ? 390 : 252;
+  const { fanout, groupHeight, groupWidth, nodePositions, playbackY } = flowGeometry(flow);
 
   const servicePosition = (nodeId: string, index: number) => {
     const persisted = flow.nodes.find((node) => node.id === nodeId)?.position;
@@ -730,7 +827,7 @@ function stablePosition(position: { x: number; y: number }) {
 
 function persistedBoardDocument(boardConfig: BoardConfig, nodes: CanvasNode[], customEdges: PacketEdge[]): BoardConfig {
   const document = structuredClone(boardConfig);
-  document.version = 2;
+  document.version = boardConfig.version === 3 || boardConfig.flows.some((flow) => flow.nodes.some((node) => node.kind === "screen")) ? 3 : 2;
   document.flows = document.flows.map((flow) => {
     const groupNode = nodes.find((node) => node.id === `${flow.id}-group`);
     const labelNode = nodes.find((node): node is LabelNode => node.id === `${flow.id}-label` && node.type === "labelNode");
@@ -1069,9 +1166,10 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     onSeek: (step) => setAfter((current) => ({ ...current, step, playing: false })),
   }), []);
 
+  const initialFlowPositions = stackedFlowPositions(flowConfigByMode);
   const initialNodes: CanvasNode[] = [
-    ...flowNodes(flowConfigByMode, "before", flowConfigByMode.before.position, before, beforeActions, assetBase),
-    ...flowNodes(flowConfigByMode, "after", flowConfigByMode.after.position, after, afterActions, assetBase),
+    ...flowNodes(flowConfigByMode, "before", initialFlowPositions.before, before, beforeActions, assetBase),
+    ...flowNodes(flowConfigByMode, "after", initialFlowPositions.after, after, afterActions, assetBase),
     ...persistedCanvasNodes(boardConfig),
   ];
 
@@ -1323,7 +1421,8 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     void markRendered();
   }, []);
 
-  const serviceNodeCount = boardConfig.flows.reduce((count, flow) => count + flow.nodes.length, 0);
+  const visualNodeCount = boardConfig.flows.reduce((count, flow) => count + flow.nodes.length, 0);
+  const screenNodeCount = boardConfig.flows.reduce((count, flow) => count + flow.nodes.filter((node) => node.kind === "screen").length, 0);
   const edgeCount = boardConfig.flows.reduce((count, flow) => count + flow.edges.length, 0);
 
   return (
@@ -1332,7 +1431,8 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       data-board-ready={boardReady ? "true" : "false"}
       data-config-sha256={configHash}
       data-render-protocol={renderProtocol}
-      data-service-node-count={serviceNodeCount}
+      data-service-node-count={visualNodeCount}
+      data-screen-node-count={screenNodeCount}
       data-edge-count={edgeCount}
       data-label-count={edgeCount}
     >
@@ -1355,7 +1455,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
         minZoom={0.3}
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}
-        aria-label={`${boardConfig.title} behavior debug canvas`}
+        aria-label={`${boardConfig.title} Difftale canvas`}
       >
         <Background gap={22} size={1.15} color="#d6d9dc" />
         <CanvasToolbar />
