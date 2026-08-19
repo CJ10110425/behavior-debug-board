@@ -166,6 +166,38 @@ async function verifyFlowClearance(page, checks) {
   checks["flow-clearance"] = true;
 }
 
+async function verifyFrameContainment(page, checks) {
+  for (const flow of ["before", "after"]) {
+    const frame = await page.locator(`.react-flow__node[data-id="${flow}-group"]`).evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+    });
+    const framed = await page
+      .locator(`[data-testid="service-node"][data-flow="${flow}"], [data-testid="playback-card"][data-flow="${flow}"]`)
+      .evaluateAll((elements) => elements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          id: element.getAttribute("data-node-id") ?? element.getAttribute("data-testid"),
+          left: box.left,
+          right: box.right,
+          top: box.top,
+          bottom: box.bottom,
+        };
+      }));
+    ensure(framed.length > 0, `${flow} flow rendered no framed content`);
+    for (const item of framed) {
+      const escapedBy = Math.max(
+        frame.left - item.left,
+        item.right - frame.right,
+        frame.top - item.top,
+        item.bottom - frame.bottom,
+      );
+      ensure(escapedBy <= 1, `${flow} ${item.id} sits ${Math.round(escapedBy)}px outside its flow frame`);
+    }
+  }
+  checks["frame-containment"] = true;
+}
+
 async function runFullInteractionQa(page, config, flow, checks) {
   const playback = page.locator(`[data-testid="playback-card"][data-flow="${flow}"]`);
   const totalSteps = Number(await playback.getAttribute("data-total-steps"));
@@ -334,7 +366,8 @@ export async function runBoardQa(options) {
     serviceNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.length, 0),
     screenNodes: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.filter((node) => node.kind === "screen").length, 0),
     mobileScreens: prepared.config.flows.reduce((count, candidate) => count + candidate.nodes.filter((node) => node.kind === "screen" && node.frame === "mobile").length, 0),
-    edges: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
+    edges: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0)
+      + (prepared.config.canvas?.edges?.length ?? 0),
     labels: prepared.config.flows.reduce((count, candidate) => count + candidate.edges.length, 0),
     playbackCards: prepared.config.flows.length,
   };
@@ -409,6 +442,7 @@ export async function runBoardQa(options) {
     checks.labels = true;
     checks.playback = true;
     await verifyFlowClearance(page, checks);
+    await verifyFrameContainment(page, checks);
     ensure(await page.locator('main[data-save-bridge-state="online"]').count() === 1, "Save Bridge is not online after Board render");
     ensure(await page.locator('[data-testid="board-save-button"]').isEnabled(), "local save button is not connected");
     ensure(await page.locator('[data-testid="board-version-toggle"]').isEnabled(), "local version history is not connected");

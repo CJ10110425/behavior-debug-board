@@ -24,4 +24,4 @@ jobs:
       - run: npm run check
       - run: npx playwright install --with-deps chromium
       - run: npm run board:qa -- --port auto --flow after --final-step --screenshot outputs/ci-board.png
-      - run: npm run board:qa -- --config skills/behavior-debug-board/assets/fanout-board.json --port auto --flow after --final-step --full --screenshot outputs/ci-fanout.png
+      - run: npm run board:qa -- --config skills/difftale/assets/fanout-board.json --port auto --flow after --final-step --full --screenshot outputs/ci-fanout.png
