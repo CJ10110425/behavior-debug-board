@@ -20,7 +20,7 @@ When browser automation is available, open the local app, navigate to the requir
 
 Use this evidence order before writing `frame`:
 
-1. The user's explicit statement (`手機 App`, `手機版網頁`, `桌面網頁`, or `桌面 App`).
+1. The user's explicit statement (`mobile app`, `mobile web`, `desktop web`, or `desktop app`) in their language.
 2. Project code and the actual screen layout:
    - React Native, Expo, Flutter, SwiftUI, UIKit, Jetpack Compose, or Android/iOS targets indicate `mobile` unless the user says otherwise.
    - Electron, Tauri, AppKit, or Windows desktop shells indicate `app`.
@@ -38,13 +38,13 @@ An explicit frame always wins over geometry. A responsive web page captured at a
 ```json
 {
   "id": "dashboard",
-  "title": "主要入口",
-  "subtitle": "登入後看見可用內容",
-  "detail": "新的主要入口",
+  "title": "Main entry",
+  "subtitle": "Available content after sign-in",
+  "detail": "The new primary entry point",
   "kind": "screen",
   "screenshot": "assets/screens/after-dashboard-a82f61c2.png",
   "frame": "browser",
-  "route": "登入後首頁",
+  "route": "Signed-in home",
   "changed": true
 }
 ```
@@ -56,7 +56,7 @@ An explicit frame always wins over geometry. A responsive web page captured at a
 - Keep title and subtitle short enough to remain editable and readable on the canvas.
 - Mobile cards show only that short editable title and one-line description around the phone frame; `detail` remains semantic Board data but is not rendered as another footer.
 
-Connect screens with behavioral labels such as `點擊登入`, `送出表單`, `完成排序`, or `進入主要入口`. Connect screens to services only when that service interaction materially explains the observed change.
+Connect screens with behavioral labels such as `Click sign in`, `Submit form`, `Complete sorting`, or `Open main entry`. Connect screens to services only when that service interaction materially explains the observed change.
 
 ## Before / After
 

@@ -30,38 +30,38 @@ export function semanticBoardDiff(previous, current) {
   const changes = [];
   const add = (type, entity, id, label, detail, flow) => changes.push({ type, entity, id, label, detail, ...(flow ? { flow } : {}) });
 
-  if (previous.title !== current.title) add("changed", "board", "title", "Board 標題", `${previous.title} → ${current.title}`);
+  if (previous.title !== current.title) add("changed", "board", "title", "Board title", `${previous.title} → ${current.title}`);
 
   const previousFlows = new Map(previous.flows.map((flow) => [flow.id, flow]));
   for (const flow of current.flows) {
     const oldFlow = previousFlows.get(flow.id);
     if (!oldFlow) continue;
-    if (oldFlow.label !== flow.label) add("changed", "flow", flow.id, `${flow.id} 標籤`, `${oldFlow.label} → ${flow.label}`, flow.id);
-    if (oldFlow.outcome !== flow.outcome) add("changed", "flow", flow.id, `${flow.label} 結果`, `${oldFlow.outcome} → ${flow.outcome}`, flow.id);
+    if (oldFlow.label !== flow.label) add("changed", "flow", flow.id, `${flow.id} label`, `${oldFlow.label} → ${flow.label}`, flow.id);
+    if (oldFlow.outcome !== flow.outcome) add("changed", "flow", flow.id, `${flow.label} outcome`, `${oldFlow.outcome} → ${flow.outcome}`, flow.id);
     if (!same(oldFlow.position, flow.position) || !same(oldFlow.labelPosition, flow.labelPosition) || !same(oldFlow.playbackPosition, flow.playbackPosition)) {
-      add("moved", "flow", flow.id, `${flow.label} 區塊`, "區塊、標籤或播放卡位置已調整", flow.id);
+      add("moved", "flow", flow.id, `${flow.label} group`, "Group, label, or playback card position changed", flow.id);
     }
 
     const oldNodes = new Map(oldFlow.nodes.map((node) => [node.id, node]));
     const nextNodes = new Map(flow.nodes.map((node) => [node.id, node]));
     for (const node of oldFlow.nodes) {
-      if (!nextNodes.has(node.id)) add("removed", "node", node.id, node.title, node.kind === "screen" ? "畫面已移除" : "服務卡已移除", flow.id);
+      if (!nextNodes.has(node.id)) add("removed", "node", node.id, node.title, node.kind === "screen" ? "Screen removed" : "Service card removed", flow.id);
     }
     for (const node of flow.nodes) {
       const oldNode = oldNodes.get(node.id);
       if (!oldNode) {
-        add("added", "node", node.id, node.title, node.kind === "screen" ? "新增畫面" : "新增服務卡", flow.id);
+        add("added", "node", node.id, node.title, node.kind === "screen" ? "Screen added" : "Service card added", flow.id);
         continue;
       }
       if (!same(without(oldNode, ["position"]), without(node, ["position"]))) {
         const detail = oldNode.screenshot !== node.screenshot
-          ? `畫面截圖已更新：${oldNode.screenshot ?? "無"} → ${node.screenshot ?? "無"}`
+          ? `Screen capture updated: ${oldNode.screenshot ?? "none"} → ${node.screenshot ?? "none"}`
           : node.kind === "screen"
-            ? "畫面名稱、路徑、裝置外框或說明已修改"
-            : oldNode.title === node.title ? "服務內容已修改" : `${oldNode.title} → ${node.title}`;
+            ? "Screen name, route, device frame, or description changed"
+            : oldNode.title === node.title ? "Service content changed" : `${oldNode.title} → ${node.title}`;
         add("changed", "node", node.id, node.title, detail, flow.id);
       }
-      if (!same(oldNode.position, node.position)) add("moved", "node", node.id, node.title, node.kind === "screen" ? "畫面位置已調整" : "服務卡位置已調整", flow.id);
+      if (!same(oldNode.position, node.position)) add("moved", "node", node.id, node.title, node.kind === "screen" ? "Screen position changed" : "Service card position changed", flow.id);
     }
 
     const oldEdges = new Map(oldFlow.edges.map((edge) => [edge.id, edge]));
@@ -72,35 +72,35 @@ export function semanticBoardDiff(previous, current) {
     for (const edge of flow.edges) {
       const oldEdge = oldEdges.get(edge.id);
       if (!oldEdge) add("added", "edge", edge.id, edge.label, `${edge.source} → ${edge.target}`, flow.id);
-      else if (!same(oldEdge, edge)) add("changed", "edge", edge.id, edge.label, `${edge.source} → ${edge.target} 的方向、文案或播放時機已修改`, flow.id);
+      else if (!same(oldEdge, edge)) add("changed", "edge", edge.id, edge.label, `Direction, copy, or playback timing changed for ${edge.source} → ${edge.target}`, flow.id);
     }
 
-    if (!same(oldFlow.steps, flow.steps)) add("changed", "timeline", `${flow.id}-steps`, `${flow.label} 播放流程`, "步驟、原因、說明或節點狀態已修改", flow.id);
+    if (!same(oldFlow.steps, flow.steps)) add("changed", "timeline", `${flow.id}-steps`, `${flow.label} playback`, "Steps, reasons, notes, or node states changed", flow.id);
   }
 
   const oldItems = new Map((previous.canvas?.items ?? []).map((item) => [item.id, item]));
   const nextItems = new Map((current.canvas?.items ?? []).map((item) => [item.id, item]));
   for (const item of previous.canvas?.items ?? []) {
-    if (!nextItems.has(item.id)) add("removed", "canvas-item", item.id, item.text, "畫布物件已移除");
+    if (!nextItems.has(item.id)) add("removed", "canvas-item", item.id, item.text, "Canvas object removed");
   }
   for (const item of current.canvas?.items ?? []) {
     const oldItem = oldItems.get(item.id);
-    if (!oldItem) add("added", "canvas-item", item.id, item.text, `新增${item.type}`);
+    if (!oldItem) add("added", "canvas-item", item.id, item.text, `Added ${item.type}`);
     else {
-      if (!same(without(oldItem, ["position"]), without(item, ["position"]))) add("changed", "canvas-item", item.id, item.text, "畫布物件內容已修改");
-      if (!same(oldItem.position, item.position)) add("moved", "canvas-item", item.id, item.text, "畫布物件位置已調整");
+      if (!same(without(oldItem, ["position"]), without(item, ["position"]))) add("changed", "canvas-item", item.id, item.text, "Canvas object content changed");
+      if (!same(oldItem.position, item.position)) add("moved", "canvas-item", item.id, item.text, "Canvas object position changed");
     }
   }
 
   const oldCanvasEdges = new Map((previous.canvas?.edges ?? []).map((edge) => [edge.id, edge]));
   const nextCanvasEdges = new Map((current.canvas?.edges ?? []).map((edge) => [edge.id, edge]));
   for (const edge of previous.canvas?.edges ?? []) {
-    if (!nextCanvasEdges.has(edge.id)) add("removed", "canvas-edge", edge.id, "自訂連線", `${edge.source} → ${edge.target}`);
+    if (!nextCanvasEdges.has(edge.id)) add("removed", "canvas-edge", edge.id, "Custom connection", `${edge.source} → ${edge.target}`);
   }
   for (const edge of current.canvas?.edges ?? []) {
     const oldEdge = oldCanvasEdges.get(edge.id);
-    if (!oldEdge) add("added", "canvas-edge", edge.id, "自訂連線", `${edge.source} → ${edge.target}`);
-    else if (!same(oldEdge, edge)) add("changed", "canvas-edge", edge.id, "自訂連線", `${edge.source} → ${edge.target}`);
+    if (!oldEdge) add("added", "canvas-edge", edge.id, "Custom connection", `${edge.source} → ${edge.target}`);
+    else if (!same(oldEdge, edge)) add("changed", "canvas-edge", edge.id, "Custom connection", `${edge.source} → ${edge.target}`);
   }
 
   const summary = { added: 0, removed: 0, changed: 0, moved: 0 };
@@ -247,7 +247,7 @@ async function createLocalRevision(configPath, title, { allowUnchanged = false }
   const source = canonicalBoardSource(JSON.parse(await readFile(configPath, "utf8")));
   const hash = boardSha256(source);
   const index = await readLocalIndex(configPath);
-  if (!allowUnchanged && index[0]?.sha256 === hash) throw new Error("目前 Board 與最新版本相同");
+  if (!allowUnchanged && index[0]?.sha256 === hash) throw new Error("The current Board matches the latest version");
   const createdAt = new Date().toISOString();
   const identifier = `${createdAt.replace(/[:.]/g, "-")}-${hash.slice(0, 12)}-${randomBytes(3).toString("hex")}`;
   const file = `${identifier}/board.json`;
@@ -264,16 +264,16 @@ async function createLocalRevision(configPath, title, { allowUnchanged = false }
 
 async function createGitRevision(configPath, title) {
   const context = await gitContext(configPath);
-  if (!context || !validGitBundle(context)) throw new Error("Git 版本只支援 .difftale/boards/<slug>/ bundle（舊版 .behavior-debug-board 路徑仍相容）");
+  if (!context || !validGitBundle(context)) throw new Error("Git versions require a .difftale/boards/<slug>/ bundle (legacy .behavior-debug-board paths remain supported)");
   const { stdout: status } = await execFileAsync("git", ["-C", context.root, "status", "--porcelain", "--", context.bundlePath]);
-  if (!status.trim()) throw new Error("目前 Board 沒有可建立版本的變更");
+  if (!status.trim()) throw new Error("The current Board has no changes to version");
   const slug = basename(context.bundlePath).replace(/[^a-z0-9-]+/gi, "-").toLowerCase() || "board";
   const message = `board(${slug}): ${title.replace(/[\r\n]+/g, " ").trim().slice(0, 72)}`;
   await execFileAsync("git", ["-C", context.root, "add", "--all", "--", context.bundlePath]);
   try {
     await execFileAsync("git", ["-C", context.root, "commit", "--only", "-m", message, "--", context.bundlePath]);
   } catch (error) {
-    throw new Error(`無法建立 Git Board 版本：${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Unable to create Git Board version: ${error instanceof Error ? error.message : String(error)}`);
   }
   const { stdout: commitOutput } = await execFileAsync("git", ["-C", context.root, "rev-parse", "HEAD"]);
   const commit = commitOutput.trim();
@@ -282,7 +282,7 @@ async function createGitRevision(configPath, title) {
 
 export async function createBoardRevision({ configPath, storageMode = "local", title }) {
   const normalizedTitle = typeof title === "string" ? title.trim() : "";
-  if (!normalizedTitle) throw new Error("版本需要簡短說明");
+  if (!normalizedTitle) throw new Error("A short version description is required");
   const absoluteConfigPath = resolve(configPath);
   canonicalBoardSource(JSON.parse(await readFile(absoluteConfigPath, "utf8")));
   return storageMode === "git"
@@ -306,7 +306,7 @@ export async function restoreBoardRevision({ configPath, revisionId, storageMode
   const restoredSource = canonicalBoardSource(restored);
   if (restoredSource === currentSource) return { restored, sha256: currentHash, diff: semanticBoardDiff(current, restored), unchanged: true };
   if (storageMode === "local") {
-    await createLocalRevision(absoluteConfigPath, "還原前自動備份", { allowUnchanged: true });
+    await createLocalRevision(absoluteConfigPath, "Automatic backup before restore", { allowUnchanged: true });
     const metadata = (await readLocalIndex(absoluteConfigPath)).find((revision) => revision.id === revisionId);
     if (!metadata || typeof metadata.file !== "string") throw new Error("local board revision not found");
     const revisionFile = safeChild(versionDirectory(absoluteConfigPath), metadata.file, "local board revision");

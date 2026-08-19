@@ -27,6 +27,7 @@ Guarantee all of the following:
 - Store screenshots as immutable board-local PNG, JPEG, or WebP assets. Use a new filename when the pixels change so semantic revision history can identify the changed screen.
 - Keep the reusable skill package generic. Never copy a user's product, company, repository, branch, source filename/path, raw code/log, private URL, identifier, or screenshot into `skills/difftale/`, renderer fixtures, tests, or public documentation. Keep user-specific evidence only in the selected local Board bundle.
 - Default Board copy to role-based names and behavioral summaries. Mention a user's own product name, source filename, or raw implementation detail only when the user explicitly asks; verified third-party service names and logos are allowed when they materially explain the flow.
+- Keep the reusable skill, public documentation, bundled fixtures, CLI output, and default Board UI English-first. Preserve Traditional Chinese as the secondary documentation and `?lang=zh-TW` UI. Write private Board story content in the user's language when it is known.
 - Load each generated board from an immutable SHA-256 runtime URL; never overwrite a tracked app fixture.
 - Treat `BOARD_SERVER_READY` as transport readiness only. Completion requires `BOARD_RENDERED` and `BOARD_QA_PASS` from browser QA.
 - Open and hand off the exact `BOARD_URL` printed by the launcher, including `config`, `save`, and `saveToken`. Never reconstruct, shorten, or strip its query parameters; a config-only URL is read-only and must show a blocking warning.
@@ -70,7 +71,7 @@ Guarantee all of the following:
 
 - Use 2–5 visual nodes per flow. Mix `screen` and service nodes when it explains the user journey. Keep linear peers on one horizontal band. For one service source with exactly two outbound targets, place the source on the left, stack both targets on the right, and use low-curvature branch paths so the fan-out is unmistakable without looking decorative. Put the upper branch label above its path and the lower branch label below its path.
 - Use `direction: "forward"` for outbound traffic and `direction: "return"` for responses/errors. Parallel tracks are mandatory for opposite directions.
-- Keep labels short and behavioral: `讀取 Profile`, `查詢資料`, `回傳 Profile`, `拒絕存取`.
+- Keep labels short and behavioral: `Read profile`, `Query data`, `Return profile`, `Deny access`.
 - Use blue for requests/loading, orange for processing/query, green for success/response, and red for failure. Keep the canvas and cards neutral.
 - Use `blocked` for a service that the request never reached; use `running` only for the card processing the active step.
 - Keep logos 24–32px, preserve aspect ratio, and never recolor brand assets.
@@ -100,7 +101,7 @@ Return:
 ```text
 Board: <absolute config path>
 Storage: Git tracked <branch/status> | local only
-URL: http://localhost:<port>/?config=<sha256>
+URL: <complete BOARD_URL including config, save, and saveToken>
 Opened: Codex browser | system browser
 Flows: Before <node/edge counts>; After <node/edge counts>
 Screens: <screen → local image → route/state>

@@ -58,7 +58,7 @@ test("semantic Board diff describes changed screenshots as screen changes", asyn
 
   const diff = semanticBoardDiff(previous, current);
   assert.equal(diff.summary.changed, 1);
-  assert.match(diff.changes[0].detail, /畫面截圖已更新/);
+  assert.match(diff.changes[0].detail, /Screen capture updated/);
 });
 
 test("local Board versions can be created, compared, and restored with a safety snapshot", async (context) => {
@@ -91,7 +91,7 @@ test("local Board versions can be created, compared, and restored with a safety 
   assert.equal(JSON.parse(await readFile(configPath, "utf8")).title, original.title);
   const afterRestore = await listBoardRevisions({ configPath, storageMode: "local" });
   assert.equal(afterRestore.revisions.length, 2);
-  assert.equal(afterRestore.revisions[0].title, "還原前自動備份");
+  assert.equal(afterRestore.revisions[0].title, "Automatic backup before restore");
 });
 
 test("local Board versions snapshot and restore referenced screen assets", async (context) => {

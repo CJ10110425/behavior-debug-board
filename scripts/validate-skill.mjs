@@ -78,7 +78,7 @@ export async function validateSkill(skillRoot = defaultSkillRoot) {
   assert(/role-based names and behavioral summaries/.test(skill), "skill must default to anonymized behavioral copy");
   assert(/value: "thesvg"/.test(manifest), "agents/openai.yaml must declare the Logo MCP dependency");
   assert(/allow_implicit_invocation: true/.test(manifest), "skill must allow implicit routing");
-  assert(/difftale/.test(resolver) && /畫面/.test(resolver) && /本地端動態 Board/.test(resolver), "resolver entry is missing");
+  assert(/difftale/.test(resolver) && /app\/web screens/i.test(resolver) && /local animated Board/i.test(resolver) && /畫面/.test(resolver), "resolver entry is missing or is not bilingual");
   assert(/Search the web/.test(logoMcp), "logo fallback must search the web after MCP misses");
   assert(/categoryIcon/.test(logoMcp), "logo fallback must define category icons");
   assert(/Never redraw, recolor, approximate, or generate a brand logo/.test(logoMcp), "logo fallback must prohibit invented brand marks");

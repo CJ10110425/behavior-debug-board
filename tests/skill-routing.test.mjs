@@ -31,11 +31,13 @@ test("routing eval covers real positive and negative user language", async () =>
 
   assert.ok(cases.filter((entry) => entry.should_route).length >= 4);
   assert.ok(cases.filter((entry) => !entry.should_route).length >= 2);
-  assert.ok(cases.some((entry) => /本地.*board/i.test(entry.prompt)));
+  assert.ok(cases.some((entry) => /local.*board/i.test(entry.prompt)));
   assert.ok(cases.some((entry) => /before.*after/i.test(entry.prompt)));
   assert.ok(cases.some((entry) => /回傳|response/i.test(entry.prompt)));
-  assert.ok(cases.some((entry) => /上一版|版本/.test(entry.prompt) && /比較|恢復/.test(entry.prompt)));
-  assert.ok(cases.some((entry) => /App.*截圖|畫面.*操作路徑/i.test(entry.prompt)));
+  assert.ok(cases.some((entry) => /previous version/i.test(entry.prompt) && /compare/i.test(entry.prompt)));
+  assert.ok(cases.some((entry) => /Capture.*app|screen/i.test(entry.prompt)));
+  assert.ok(cases.filter((entry) => entry.should_route && /[一-龥]/.test(entry.prompt)).length >= 2);
+  assert.ok(cases.filter((entry) => entry.should_route && !/[一-龥]/.test(entry.prompt)).length > cases.filter((entry) => entry.should_route && /[一-龥]/.test(entry.prompt)).length);
 });
 
 test("LLM quality evals require behavior synthesis and an opened local board", async () => {
@@ -45,16 +47,16 @@ test("LLM quality evals require behavior synthesis and an opened local board", a
   assert.ok(cases.length >= 3);
   for (const entry of cases) {
     if (entry.name === "git-choice-gate") {
-      assert.ok(entry.expected.some((expectation) => /Git 版控.*只存本機.*取消/i.test(expectation)));
-      assert.ok(entry.expected.some((expectation) => /不會自動 push/i.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /Git versioning.*local-only.*cancel/i.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /never push automatically/i.test(expectation)));
       continue;
     }
     if (entry.name === "version-compare-restore") {
-      assert.ok(entry.expected.some((expectation) => /新增.*移除.*修改.*移動/.test(expectation)));
-      assert.ok(entry.expected.some((expectation) => /自動備份/.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /Added.*Removed.*Changed.*Moved/.test(expectation)));
+      assert.ok(entry.expected.some((expectation) => /automatic.*backup/i.test(expectation)));
       continue;
     }
-    if (entry.name === "app-screen-flow") {
+    if (entry.name === "traditional-chinese-screen-flow") {
       assert.ok(entry.expected.some((expectation) => /kind screen/.test(expectation)));
       assert.ok(entry.expected.some((expectation) => /assets\/screens/.test(expectation)));
     }
@@ -77,4 +79,21 @@ test("screen workflow inspects project layout before using screenshot geometry",
   assert.match(workflow, /React Native, Expo, Flutter, SwiftUI/);
   assert.match(workflow, /responsive web page captured at a phone viewport uses `mobile`/);
   assert.match(workflow, /Ask the user when code, viewport, and dimensions disagree/);
+});
+
+test("public surfaces are English-first with Traditional Chinese retained as a secondary language", async () => {
+  const [readme, skill, page, example, fanout] = await Promise.all([
+    readFile(resolve(repoRoot, "README.md"), "utf8"),
+    readFile(resolve(skillRoot, "SKILL.md"), "utf8"),
+    readFile(resolve(repoRoot, "app/page.tsx"), "utf8"),
+    readFile(resolve(skillRoot, "assets/example-board.json"), "utf8"),
+    readFile(resolve(skillRoot, "assets/fanout-board.json"), "utf8"),
+  ]);
+
+  assert.match(readme, /\*\*English\*\* · \[繁體中文\]/);
+  assert.match(skill, /English-first/);
+  assert.match(page, /params\.get\("lang"\) === "zh-TW"/);
+  assert.match(page, /createContext<UiLocale>\("en"\)/);
+  assert.doesNotMatch(example, /[一-龥]/);
+  assert.doesNotMatch(fanout, /[一-龥]/);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type MouseEvent as ReactMouseEvent, type SetStateAction } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type MouseEvent as ReactMouseEvent, type SetStateAction } from "react";
 import {
   Background,
   BaseEdge,
@@ -22,7 +22,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import boardConfigJson from "./board.generated.json";
+import boardConfigJson from "./board.default.json";
 import type {
   BoardConfig,
   BoardCategoryIcon,
@@ -134,6 +134,7 @@ type LoadedBoard = {
   saveEndpoint?: string;
   saveToken?: string;
   timeScale: number;
+  locale: UiLocale;
 };
 
 type BoardRevision = {
@@ -164,6 +165,15 @@ type SemanticDiff = {
 
 type FlowConfigByMode = Record<Mode, BoardFlowConfig>;
 type SingleSourceFanout = { source: string; targets: [string, string] };
+type UiLocale = "en" | "zh-TW";
+
+const UiLocaleContext = createContext<UiLocale>("en");
+
+function useUiText() {
+  const locale = useContext(UiLocaleContext);
+  const text = useCallback((english: string, traditionalChinese: string) => locale === "zh-TW" ? traditionalChinese : english, [locale]);
+  return { locale, text };
+}
 
 const embeddedBoardConfig = boardConfigJson as BoardConfig;
 const renderProtocol = "5";
@@ -202,12 +212,9 @@ const defaultCategoryIcon: Record<BoardNodeKind, BoardCategoryIcon> = {
   screen: "web-app",
 };
 
-const statusLabel: Record<NodeStatus, string> = {
-  idle: "等待中",
-  running: "傳輸中",
-  success: "已通過",
-  error: "被拒絕",
-  blocked: "未抵達",
+const statusLabel: Record<UiLocale, Record<NodeStatus, string>> = {
+  en: { idle: "Waiting", running: "Transferring", success: "Passed", error: "Rejected", blocked: "Not reached" },
+  "zh-TW": { idle: "等待中", running: "傳輸中", success: "已通過", error: "被拒絕", blocked: "未抵達" },
 };
 
 const iconPath: Record<IconName, string> = {
@@ -254,9 +261,10 @@ function ServiceIcon({ data }: { data: DebugNodeData }) {
 }
 
 function FlowGroupCard({ data, selected }: NodeProps<FlowGroupNode>) {
+  const { text } = useUiText();
   return (
     <div className={`flow-group-frame flow-group-frame--${data.mode}${selected ? " is-selected" : ""}`}>
-      <span className="group-move-indicator" title="拖曳空白處可移動整組 Flow">
+      <span className="group-move-indicator" title={text("Drag empty space to move the whole flow", "拖曳空白處可移動整組 Flow")}>
         <SvgIcon name="move" size={16} />
       </span>
     </div>
@@ -280,17 +288,19 @@ function TextLabelCard({ id, data }: NodeProps<LabelNode>) {
 }
 
 function NodeStatusIndicator({ status }: { status: NodeStatus }) {
+  const { locale } = useUiText();
   return (
     <span className={`node-status node-status--${status}`} aria-live="polite">
       {status === "running"
         ? <span className="node-status__spinner" aria-hidden="true" />
         : <span className="node-status__dot" />}
-      {statusLabel[status]}
+      {statusLabel[locale][status]}
     </span>
   );
 }
 
 function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
+  const { text } = useUiText();
   const { updateNodeData } = useReactFlow<DebugNode, PacketEdge>();
   const updateCopy = (field: "title" | "subtitle", value: string) => updateNodeData(id, { [field]: value });
   const isScreen = data.kind === "screen";
@@ -314,7 +324,7 @@ function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
           <div className="screen-card__header">
             <div className="screen-card__meta">
               <span className="screen-card__frame-label">{screenFrameLabel}</span>
-              {data.changed ? <span className="screen-card__changed">已修改</span> : null}
+              {data.changed ? <span className="screen-card__changed">{text("Changed", "已修改")}</span> : null}
               <NodeStatusIndicator status={data.status} />
             </div>
             <input
@@ -343,7 +353,7 @@ function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
           ) : <span className="screen-preview__island" aria-hidden="true" />}
           {/* Board screenshots are durable local assets copied into the hash-addressed runtime bundle. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className="screen-preview__image nodrag" src={data.screenshot} alt={`${data.title} 畫面截圖`} draggable={false} />
+          <img className="screen-preview__image nodrag" src={data.screenshot} alt={`${data.title} ${text("screen capture", "畫面截圖")}`} draggable={false} />
           </figure>
         </>
       ) : (
@@ -371,7 +381,7 @@ function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
             />
           </div>
           <div className="debug-node__detail">
-            {data.changed ? <span className="changed-badge">修改位置</span> : null}
+            {data.changed ? <span className="changed-badge">{text("Changed here", "修改位置")}</span> : null}
             <span>{data.detail}</span>
           </div>
         </>
@@ -383,6 +393,7 @@ function DebugNodeCard({ id, data }: NodeProps<DebugNode>) {
 }
 
 function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
+  const { text } = useUiText();
   const isBefore = data.mode === "before";
 
   return (
@@ -401,7 +412,7 @@ function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
         </span>
         <div className="playback-copy">
           <strong>{data.title}</strong>
-          <p className="playback-reason"><b>原因</b><span>{data.reason}</span></p>
+          <p className="playback-reason"><b>{text("Why", "原因")}</b><span>{data.reason}</span></p>
           <p className="playback-note">{data.note}</p>
         </div>
       </div>
@@ -409,13 +420,13 @@ function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
       <div className="playback-control-area nodrag nowheel nopan">
         <div className="playback-controls">
           <div className="playback-buttons">
-            <button type="button" data-testid={`playback-toggle-${data.mode}`} onClick={data.onToggle} aria-label={data.playing ? `暫停 ${data.mode}` : `播放 ${data.mode}`}>
+            <button type="button" data-testid={`playback-toggle-${data.mode}`} onClick={data.onToggle} aria-label={data.playing ? `${text("Pause", "暫停")} ${data.mode}` : `${text("Play", "播放")} ${data.mode}`}>
               <SvgIcon name={data.playing ? "pause" : "play"} size={14} />
-              {data.playing ? "暫停" : "播放"}
+              {data.playing ? text("Pause", "暫停") : text("Play", "播放")}
             </button>
             <button type="button" data-testid={`playback-replay-${data.mode}`} onClick={data.onReplay}>
               <SvgIcon name="replay" size={14} />
-              重播
+              {text("Replay", "重播")}
             </button>
           </div>
         </div>
@@ -438,6 +449,7 @@ function PlaybackCard({ data }: NodeProps<PlaybackNode>) {
 }
 
 function FreeTextCard({ id, data }: NodeProps<FreeTextNode>) {
+  const { text } = useUiText();
   const { updateNodeData } = useReactFlow<FreeTextNode, PacketEdge>();
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (data.autoFocus) inputRef.current?.focus(); }, [data.autoFocus]);
@@ -449,7 +461,7 @@ function FreeTextCard({ id, data }: NodeProps<FreeTextNode>) {
         ref={inputRef}
         className="nodrag nowheel nopan"
         value={data.text}
-        aria-label="畫布文字"
+        aria-label={text("Canvas text", "畫布文字")}
         onChange={(event) => updateNodeData(id, { text: event.target.value, autoFocus: false })}
         onKeyDown={(event) => event.stopPropagation()}
       />
@@ -458,6 +470,7 @@ function FreeTextCard({ id, data }: NodeProps<FreeTextNode>) {
 }
 
 function NoteCard({ id, data }: NodeProps<NoteNode>) {
+  const { text } = useUiText();
   const { updateNodeData } = useReactFlow<NoteNode, PacketEdge>();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (data.autoFocus) textareaRef.current?.focus(); }, [data.autoFocus]);
@@ -470,7 +483,7 @@ function NoteCard({ id, data }: NodeProps<NoteNode>) {
         ref={textareaRef}
         className="nodrag nowheel nopan"
         value={data.text}
-        aria-label="畫布便條"
+        aria-label={text("Canvas note", "畫布便條")}
         onChange={(event) => updateNodeData(id, { text: event.target.value, autoFocus: false })}
         onKeyDown={(event) => event.stopPropagation()}
       />
@@ -480,6 +493,7 @@ function NoteCard({ id, data }: NodeProps<NoteNode>) {
 }
 
 function ShapeCard({ id, data }: NodeProps<ShapeNode>) {
+  const { text } = useUiText();
   const { updateNodeData } = useReactFlow<ShapeNode, PacketEdge>();
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (data.autoFocus) inputRef.current?.focus(); }, [data.autoFocus]);
@@ -492,7 +506,7 @@ function ShapeCard({ id, data }: NodeProps<ShapeNode>) {
         ref={inputRef}
         className="nodrag nowheel nopan"
         value={data.text}
-        aria-label="矩形標籤"
+        aria-label={text("Rectangle label", "矩形標籤")}
         onChange={(event) => updateNodeData(id, { text: event.target.value, autoFocus: false })}
         onKeyDown={(event) => event.stopPropagation()}
       />
@@ -551,33 +565,35 @@ function PacketEdgeComponent({ id, sourceX, sourceY, sourcePosition, targetX, ta
 
 function CanvasToolbar() {
   const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { text } = useUiText();
 
   return (
     <Panel position="top-left" className="canvas-toolbar">
-      <button type="button" data-testid="zoom-in" onClick={() => zoomIn({ duration: 160 })} aria-label="放大" title="放大">
+      <button type="button" data-testid="zoom-in" onClick={() => zoomIn({ duration: 160 })} aria-label={text("Zoom in", "放大")} title={text("Zoom in", "放大")}>
         <SvgIcon name="zoom-in" size={18} />
       </button>
-      <button type="button" data-testid="zoom-out" onClick={() => zoomOut({ duration: 160 })} aria-label="縮小" title="縮小">
+      <button type="button" data-testid="zoom-out" onClick={() => zoomOut({ duration: 160 })} aria-label={text("Zoom out", "縮小")} title={text("Zoom out", "縮小")}>
         <SvgIcon name="zoom-out" size={18} />
       </button>
-      <button type="button" data-testid="fit-view" onClick={() => fitView({ padding: 0.12, duration: 280 })} aria-label="將所有內容置中" title="Fit view · 將所有內容置中">
+      <button type="button" data-testid="fit-view" onClick={() => fitView({ padding: 0.12, duration: 280 })} aria-label={text("Fit all content", "將所有內容置中")} title={text("Fit view · center all content", "Fit view · 將所有內容置中")}>
         <SvgIcon name="fit" size={18} />
       </button>
     </Panel>
   );
 }
 
-const creationTools: { id: CanvasTool; icon: IconName; label: string }[] = [
-  { id: "select", icon: "select", label: "選取與移動物件" },
-  { id: "pan", icon: "pan", label: "手掌平移畫布" },
-  { id: "connect", icon: "connect", label: "連接節點" },
-  { id: "text", icon: "text", label: "新增文字" },
-  { id: "note", icon: "note", label: "新增便條" },
-  { id: "shape", icon: "shape", label: "新增矩形" },
+const creationTools: { id: CanvasTool; icon: IconName; label: [string, string] }[] = [
+  { id: "select", icon: "select", label: ["Select and move objects", "選取與移動物件"] },
+  { id: "pan", icon: "pan", label: ["Pan canvas", "手掌平移畫布"] },
+  { id: "connect", icon: "connect", label: ["Connect nodes", "連接節點"] },
+  { id: "text", icon: "text", label: ["Add text", "新增文字"] },
+  { id: "note", icon: "note", label: ["Add note", "新增便條"] },
+  { id: "shape", icon: "shape", label: ["Add rectangle", "新增矩形"] },
 ];
 
 function CreationToolbar({ tool, onToolChange }: { tool: CanvasTool; onToolChange: (tool: CanvasTool) => void }) {
   const [collapsed, setCollapsed] = useState(false);
+  const { text } = useUiText();
 
   return (
     <Panel position="top-left" className={`creation-toolbar${collapsed ? " is-collapsed" : ""}`}>
@@ -587,9 +603,9 @@ function CreationToolbar({ tool, onToolChange }: { tool: CanvasTool; onToolChang
             type="button"
             className={tool === item.id ? "is-active" : ""}
             onClick={() => onToolChange(item.id)}
-            aria-label={item.label}
+            aria-label={text(...item.label)}
             aria-pressed={tool === item.id}
-            title={item.label}
+            title={text(...item.label)}
           >
             <SvgIcon name={item.icon} size={19} />
           </button>
@@ -599,8 +615,8 @@ function CreationToolbar({ tool, onToolChange }: { tool: CanvasTool; onToolChang
         type="button"
         className="creation-toolbar__collapse"
         onClick={() => setCollapsed((current) => !current)}
-        aria-label={collapsed ? "展開工具列" : "收合工具列"}
-        title={collapsed ? "展開工具列" : "收合工具列"}
+        aria-label={collapsed ? text("Expand toolbar", "展開工具列") : text("Collapse toolbar", "收合工具列")}
+        title={collapsed ? text("Expand toolbar", "展開工具列") : text("Collapse toolbar", "收合工具列")}
       >
         <SvgIcon name="collapse" size={17} />
       </button>
@@ -963,21 +979,28 @@ function BoardSavePanel({ enabled, state, meta, storageMode, onSave, onToggleVer
   onToggleVersions: () => void;
   versionsOpen: boolean;
 }) {
+  const { locale, text } = useUiText();
   const displayState = enabled ? state : "error";
   const label = !enabled
-    ? "本地儲存未連接"
+    ? text("Local storage disconnected", "本地儲存未連接")
     : state === "saving"
-      ? "儲存中…"
+      ? text("Saving…", "儲存中…")
       : state === "dirty"
-        ? "尚未儲存"
+        ? text("Unsaved changes", "尚未儲存")
         : state === "error"
-          ? "儲存失敗"
-          : "已存到本機";
+          ? text("Save failed", "儲存失敗")
+          : text("Saved locally", "已存到本機");
   const gitLabel = storageMode === "git"
     ? meta.git?.tracked
-      ? `${meta.git.branch ?? "Git"} · ${meta.git.status === "clean" ? "Git clean" : "Git 未提交"}`
-      : "Git 模式尚未連接 repository"
-    : "只存本機 · 不建立 Git commit";
+      ? `${meta.git.branch ?? "Git"} · ${meta.git.status === "clean" ? "Git clean" : text("Git changes uncommitted", "Git 未提交")}`
+      : text("Git mode is not connected to a repository", "Git 模式尚未連接 repository")
+    : text("Local only · no Git commits", "只存本機 · 不建立 Git commit");
+  const switchLanguage = () => {
+    const url = new URL(window.location.href);
+    if (locale === "en") url.searchParams.set("lang", "zh-TW");
+    else url.searchParams.delete("lang");
+    window.location.assign(url.toString());
+  };
 
   return (
     <Panel position="top-right" className="board-save-panel">
@@ -985,11 +1008,12 @@ function BoardSavePanel({ enabled, state, meta, storageMode, onSave, onToggleVer
         <span className={`board-save-panel__dot board-save-panel__dot--${displayState}`} />
         <div>
           <strong>{label}</strong>
-          <small title={meta.path}>{!enabled ? meta.message ?? "正在確認 Save Bridge" : state === "error" ? meta.message : gitLabel}</small>
+          <small title={meta.path}>{!enabled ? meta.message ?? text("Checking Save Bridge", "正在確認 Save Bridge") : state === "error" ? meta.message : gitLabel}</small>
         </div>
         <div className="board-save-panel__actions">
-          <button type="button" data-testid="board-version-toggle" aria-expanded={versionsOpen} disabled={!enabled} onClick={onToggleVersions}>版本</button>
-          <button type="button" data-testid="board-save-button" disabled={!enabled || state === "saving"} onClick={onSave}>儲存</button>
+          <button type="button" data-testid="language-toggle" onClick={switchLanguage} aria-label={text("Switch interface to Traditional Chinese", "將介面切換成英文")}>{locale === "en" ? "繁中" : "EN"}</button>
+          <button type="button" data-testid="board-version-toggle" aria-expanded={versionsOpen} disabled={!enabled} onClick={onToggleVersions}>{text("Versions", "版本")}</button>
+          <button type="button" data-testid="board-save-button" disabled={!enabled || state === "saving"} onClick={onSave}>{text("Save", "儲存")}</button>
         </div>
       </div>
     </Panel>
@@ -1031,54 +1055,61 @@ function BoardVersionPanel({
   onRestoreCancel: () => void;
   onClose: () => void;
 }) {
+  const { locale, text } = useUiText();
   if (!open) return null;
-  const typeLabel: Record<SemanticChange["type"], string> = { added: "新增", removed: "移除", changed: "修改", moved: "移動" };
+  const typeLabel: Record<SemanticChange["type"], string> = {
+    added: text("Added", "新增"),
+    removed: text("Removed", "移除"),
+    changed: text("Changed", "修改"),
+    moved: text("Moved", "移動"),
+  };
 
   return (
     <Panel position="top-right" className="board-version-panel nodrag nowheel nopan" data-testid="board-version-panel">
       <header>
         <div>
-          <strong>版本紀錄</strong>
-          <small>{storageMode === "git" ? "Git 本機 commit" : "本機 snapshots"}</small>
+          <strong>{text("Version history", "版本紀錄")}</strong>
+          <small>{storageMode === "git" ? text("Local Git commits", "Git 本機 commit") : text("Local snapshots", "本機 snapshots")}</small>
         </div>
-        <button type="button" className="board-version-panel__close" aria-label="關閉版本紀錄" onClick={onClose}>×</button>
+        <button type="button" data-testid="board-version-close" className="board-version-panel__close" aria-label={text("Close version history", "關閉版本紀錄")} onClick={onClose}>×</button>
       </header>
 
       <div className="board-version-create">
         <input
           value={title}
+          data-testid="board-version-title"
           onChange={(event) => onTitleChange(event.target.value)}
-          placeholder="簡短說明這一版…"
-          aria-label="版本說明"
+          placeholder={text("Briefly describe this version…", "簡短說明這一版…")}
+          aria-label={text("Version description", "版本說明")}
           maxLength={72}
         />
-        <button type="button" data-testid="board-version-create" disabled={busy || !title.trim()} onClick={onCreate}>建立版本</button>
+        <button type="button" data-testid="board-version-create" disabled={busy || !title.trim()} onClick={onCreate}>{text("Create version", "建立版本")}</button>
       </div>
 
       {error ? <p className="board-version-error" role="alert">{error}</p> : null}
 
       <div className="board-version-list" aria-busy={busy}>
-        {revisions.length === 0 ? <p className="board-version-empty">還沒有版本。儲存目前狀態後建立第一版。</p> : null}
+        {revisions.length === 0 ? <p className="board-version-empty">{text("No versions yet. Save the current state, then create the first version.", "還沒有版本。儲存目前狀態後建立第一版。")}</p> : null}
         {revisions.map((revision) => (
           <article key={revision.id} className={selectedRevision === revision.id ? "is-selected" : ""} data-revision-id={revision.id}>
             <div className="board-version-list__copy">
               <strong>{revision.title}</strong>
               <small>
-                {revision.source === "git" ? revision.shortCommit : "本機"}
+                {revision.source === "git" ? revision.shortCommit : text("Local", "本機")}
                 {" · "}
-                {new Date(revision.createdAt).toLocaleString("zh-TW", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                {revision.active ? " · 目前版本" : ""}
+                {new Date(revision.createdAt).toLocaleString(locale === "zh-TW" ? "zh-TW" : "en-US", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                {revision.active ? ` · ${text("Current", "目前版本")}` : ""}
               </small>
             </div>
             <div className="board-version-list__actions">
-              <button type="button" disabled={busy || revision.unavailable} onClick={() => onCompare(revision)}>比較</button>
-              <button type="button" disabled={busy || revision.unavailable || revision.active} onClick={() => onRestoreRequest(revision)}>還原</button>
+              <button type="button" data-testid="board-version-compare" disabled={busy || revision.unavailable} onClick={() => onCompare(revision)}>{text("Compare", "比較")}</button>
+              <button type="button" data-testid="board-version-restore" disabled={busy || revision.unavailable || revision.active} onClick={() => onRestoreRequest(revision)}>{text("Restore", "還原")}</button>
             </div>
             {restoreCandidate === revision.id ? (
               <div className="board-version-confirm">
-                <span>會先保存目前狀態，再還原這一版。</span>
-                <button type="button" data-testid="board-version-restore-confirm" onClick={onRestoreConfirm}>確定</button>
-                <button type="button" onClick={onRestoreCancel}>取消</button>
+                <span>{text("The current state will be saved before this version is restored.", "會先保存目前狀態，再還原這一版。")}</span>
+                <button type="button" data-testid="board-version-restore-confirm" onClick={onRestoreConfirm}>{text("Confirm", "確定")}</button>
+                <button type="button" onClick={onRestoreCancel}>{text("Cancel", "取消")}</button>
               </div>
             ) : null}
           </article>
@@ -1088,14 +1119,14 @@ function BoardVersionPanel({
       {diff ? (
         <section className="board-version-diff" data-testid="board-version-diff">
           <header>
-            <strong>相較目前 Board</strong>
+            <strong>{text("Compared with the current Board", "相較目前 Board")}</strong>
             <div>
               {(Object.entries(diff.summary) as [SemanticChange["type"], number][]).map(([type, count]) => count > 0 ? (
                 <span key={type} className={`semantic-count semantic-count--${type}`}>{typeLabel[type]} {count}</span>
               ) : null)}
             </div>
           </header>
-          {diff.empty ? <p>這一版與目前 Board 沒有語意差異。</p> : (
+          {diff.empty ? <p>{text("This version has no semantic differences from the current Board.", "這一版與目前 Board 沒有語意差異。")}</p> : (
             <ul>
               {diff.changes.slice(0, 30).map((change, index) => (
                 <li key={`${change.type}-${change.entity}-${change.id}-${index}`} className={`semantic-change semantic-change--${change.type}`}>
@@ -1113,6 +1144,7 @@ function BoardVersionPanel({
 
 function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: (config: BoardConfig, hash: string, git?: SaveMeta["git"]) => void }) {
   const { config: boardConfig, configHash, assetHash, finalStep, initialFlow, saveEndpoint, saveToken, timeScale } = loaded;
+  const { locale, text } = useUiText();
   const flowConfigByMode = useMemo(() => Object.fromEntries(boardConfig.flows.map((flow) => [flow.id, flow])) as FlowConfigByMode, [boardConfig]);
   const assetBase = assetHash === "embedded" ? undefined : `/runtime/assets/${assetHash}`;
   const initialRuntime = useCallback((mode: Mode): FlowRuntime => ({
@@ -1185,7 +1217,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       } catch {
         if (stopped) return;
         setSaveBridgeState("offline");
-        setSaveMeta({ message: "本地寫檔服務已離線，請重新執行 difftale launch" });
+        setSaveMeta({ message: text("The local file service is offline. Run difftale launch again.", "本地寫檔服務已離線，請重新執行 difftale launch") });
         setSaveState("error");
       }
     };
@@ -1195,7 +1227,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       stopped = true;
       window.clearInterval(heartbeat);
     };
-  }, [saveEndpoint, saveToken]);
+  }, [saveEndpoint, saveToken, text]);
 
   useEffect(() => {
     if (persistedSource !== savedSourceRef.current && saveState === "saved") setSaveState("dirty");
@@ -1277,7 +1309,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     setVersionError("");
     try {
       const saved = await ensureBoardSaved();
-      if (!saved) throw new Error("請先完成本地儲存，再建立版本");
+      if (!saved) throw new Error(text("Save locally before creating a version.", "請先完成本地儲存，再建立版本"));
       const response = await fetch(`${saveEndpoint}/version`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-board-token": saveToken },
@@ -1300,7 +1332,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     } finally {
       setVersionBusy(false);
     }
-  }, [ensureBoardSaved, saveEndpoint, saveToken, versionTitle]);
+  }, [ensureBoardSaved, saveEndpoint, saveToken, text, versionTitle]);
 
   const compareVersion = useCallback(async (revision: BoardRevision) => {
     if (!saveEndpoint || !saveToken) return;
@@ -1330,7 +1362,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
     setVersionError("");
     try {
       const baseHash = await ensureBoardSaved();
-      if (!baseHash) throw new Error("請先完成本地儲存，再還原版本");
+      if (!baseHash) throw new Error(text("Save locally before restoring a version.", "請先完成本地儲存，再還原版本"));
       const response = await fetch(`${saveEndpoint}/restore`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-board-token": saveToken },
@@ -1344,7 +1376,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       setVersionError(error instanceof Error ? error.message : String(error));
       setVersionBusy(false);
     }
-  }, [ensureBoardSaved, onRestored, restoreCandidate, saveEndpoint, saveToken]);
+  }, [ensureBoardSaved, onRestored, restoreCandidate, saveEndpoint, saveToken, text]);
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -1397,7 +1429,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
         id,
         type: "freeTextNode",
         position: { x: point.x - 86, y: point.y - 22 },
-        data: { text: "輸入文字", autoFocus: true },
+        data: { text: text("Enter text", "輸入文字"), autoFocus: true },
         draggable: true,
         zIndex: 2,
       };
@@ -1406,7 +1438,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
         id,
         type: "noteNode",
         position: { x: point.x - 90, y: point.y - 58 },
-        data: { text: "輸入除錯註記…", autoFocus: true },
+        data: { text: text("Add a debugging note…", "輸入除錯註記…"), autoFocus: true },
         draggable: true,
         zIndex: 2,
       };
@@ -1415,7 +1447,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
         id,
         type: "shapeNode",
         position: { x: point.x - 96, y: point.y - 48 },
-        data: { text: "新的節點", autoFocus: true },
+        data: { text: text("New node", "新的節點"), autoFocus: true },
         draggable: true,
         zIndex: 2,
       };
@@ -1423,7 +1455,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
 
     setNodes((current) => [...current, node]);
     setTool("select");
-  }, [flowInstance, setNodes, tool]);
+  }, [flowInstance, setNodes, text, tool]);
 
   const onConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return;
@@ -1472,6 +1504,7 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       data-edge-count={edgeCount}
       data-label-count={edgeCount}
       data-save-bridge-state={saveBridgeState}
+      data-locale={locale}
     >
       <ReactFlow
         className={`canvas-tool--${tool}`}
@@ -1532,13 +1565,13 @@ function BoardCanvas({ loaded, onRestored }: { loaded: LoadedBoard; onRestored: 
       {saveBridgeState !== "online" ? (
         <div className="board-write-blocker" role="alert" data-testid="board-write-blocker" data-bridge-state={saveBridgeState}>
           <div>
-            <strong>{saveBridgeState === "checking" ? "正在連接本地儲存…" : "目前無法安全編輯"}</strong>
+            <strong>{saveBridgeState === "checking" ? text("Connecting local storage…", "正在連接本地儲存…") : text("Editing is currently locked", "目前無法安全編輯")}</strong>
             <span>
               {saveBridgeState === "missing"
-                ? "這個網址缺少儲存連線。請重新執行 difftale launch，並使用完整 BOARD_URL。"
+                ? text("This URL is missing its save connection. Run difftale launch again and use the complete BOARD_URL.", "這個網址缺少儲存連線。請重新執行 difftale launch，並使用完整 BOARD_URL。")
                 : saveBridgeState === "offline"
-                  ? "本地寫檔服務已離線。請重新執行 difftale launch，再從新的完整網址開啟。"
-                  : "確認 Save Bridge 可寫入後，畫布會自動解除鎖定。"}
+                  ? text("The local file service is offline. Run difftale launch again, then open the new complete URL.", "本地寫檔服務已離線。請重新執行 difftale launch，再從新的完整網址開啟。")
+                  : text("The canvas will unlock after the Save Bridge is ready to write.", "確認 Save Bridge 可寫入後，畫布會自動解除鎖定。")}
             </span>
           </div>
         </div>
@@ -1560,6 +1593,8 @@ export default function Home() {
     const load = async () => {
       const params = new URLSearchParams(window.location.search);
       const requestedHash = params.get("config");
+      const locale: UiLocale = params.get("lang") === "zh-TW" ? "zh-TW" : "en";
+      document.documentElement.lang = locale === "zh-TW" ? "zh-Hant" : "en";
       const initialFlow: Mode = params.get("flow") === "before" ? "before" : "after";
       const finalStep = params.get("step") === "final";
       const requestedTimeScale = Number(params.get("timeScale") ?? "1");
@@ -1571,7 +1606,7 @@ export default function Home() {
       if ((requestedSaveEndpoint || requestedSaveToken) && (!validSaveEndpoint || !validSaveToken)) throw new Error("Invalid local save session");
 
       if (!requestedHash) {
-        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", assetHash: "embedded", session: 0, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
+        setLoaded({ config: embeddedBoardConfig, configHash: "embedded", assetHash: "embedded", session: 0, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale, locale });
         return;
       }
       if (!/^[a-f0-9]{64}$/.test(requestedHash)) throw new Error("Invalid runtime config hash");
@@ -1581,7 +1616,7 @@ export default function Home() {
       const source = await response.text();
       const actualHash = await sha256(source);
       if (actualHash !== requestedHash) throw new Error(`Runtime config hash mismatch: expected ${requestedHash}, received ${actualHash}`);
-      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, assetHash: requestedHash, session: 0, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale });
+      setLoaded({ config: JSON.parse(source) as BoardConfig, configHash: requestedHash, assetHash: requestedHash, session: 0, finalStep, initialFlow, saveEndpoint: requestedSaveEndpoint, saveToken: requestedSaveToken, timeScale, locale });
     };
 
     void load().catch((error: unknown) => setLoadError(error instanceof Error ? error.message : String(error)));
@@ -1594,10 +1629,12 @@ export default function Home() {
     return <main className="canvas-app" data-board-ready="false" aria-busy="true" />;
   }
   return (
-    <BoardCanvas
-      key={`${loaded.configHash}:${loaded.session}`}
-      loaded={loaded}
-      onRestored={(config, hash) => setLoaded((current) => current ? { ...current, config, configHash: hash, session: current.session + 1 } : current)}
-    />
+    <UiLocaleContext.Provider value={loaded.locale}>
+      <BoardCanvas
+        key={`${loaded.configHash}:${loaded.session}`}
+        loaded={loaded}
+        onRestored={(config, hash) => setLoaded((current) => current ? { ...current, config, configHash: hash, session: current.session + 1 } : current)}
+      />
+    </UiLocaleContext.Provider>
   );
 }
